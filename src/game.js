@@ -129,7 +129,7 @@ export const ENEMIES = [
     description: "三本の横線をビームにして飛ばす強敵。",
   },
 ];
-// 同じ母音の次の行へ。全3ページの一周で最大3回進化する。
+// 同じ母音の次の行へ。1章3ページで最大3回進化する。
 export const EVOLUTION = ['あかさた', 'いきしち', 'うくすつ', 'えけせて', 'おこそと'];
 export function heroesFor(ranks = [0, 0, 0, 0, 0]) {
   return HEROES.map((h, i) => {
@@ -216,8 +216,9 @@ export class Battle {
       action: 0,
       stride: 0,
       moving: false,
-      bossPhase: null,
-      phaseTime: 0,
+      bossBehavior: boss ? this.config.boss.behavior : null,
+      bossPhase: boss && this.config.boss.behavior === 'guard' ? 'guard' : null,
+      phaseTime: boss && this.config.boss.behavior === 'guard' ? 2.4 : 0,
       strikes: 0,
     };
     this.units.push(u);
@@ -241,7 +242,7 @@ export class Battle {
     const erased = this.units.filter(u => u.side === -1).map(u => ({ ...u }));
     for (const u of this.units)
       if (u.side === -1) {
-        u.hp -= 240;
+        this.damageUnit(u, 240);
         u.x = Math.min(1055, u.x + 65);
       }
     this.enemyHp = Math.max(0, this.enemyHp - 100);
@@ -295,29 +296,75 @@ export class Battle {
     }
     return distance + u.speed * remaining;
   }
+  damageUnit(u, amount) {
+    const multiplier = u.bossBehavior === 'guard'
+      ? u.bossPhase === 'guard' ? 0.35 : u.bossPhase === 'recovery' ? 1.5 : 1
+      : 1;
+    const damage = amount * multiplier;
+    u.hp -= damage;
+    return damage;
+  }
+  updateSpecialBoss(u, dt, target, baseInRange, foes) {
+    if (u.bossBehavior === 'triple') return this.updateTriple(u, dt, target, baseInRange, foes);
+    if (!['sweep', 'guard'].includes(u.bossBehavior)) return false;
+    if (u.bossPhase === 'guard' && !target && !baseInRange) return false;
+    if (!u.bossPhase) {
+      if (u.timer > 0 || (!target && !baseInRange)) return false;
+      u.bossPhase = 'windup'; u.phaseTime = 1.4;
+      this.onEvent({ type: 'bossWindup', id: u.id, glyph: u.glyph });
+      return true;
+    }
+    u.phaseTime -= dt;
+    if (u.phaseTime > 0) return true;
+    if (u.bossPhase === 'guard') {
+      u.bossPhase = 'windup'; u.phaseTime = 1;
+      this.onEvent({ type: 'bossWindup', id: u.id, glyph: u.glyph });
+    } else if (u.bossPhase === 'windup') {
+      u.action = 0.38;
+      if (u.bossBehavior === 'sweep') {
+        const targets = foes.filter(v => Math.abs(v.x - u.x) <= u.range);
+        for (const v of targets) {
+          this.attackTarget(u, v, foes, v.x, 1.4);
+          v.x = Math.max(145, v.x - 85);
+        }
+        if (!targets.length && baseInRange) this.attackTarget(u, null, foes, 130, 1.4);
+      } else if (target || baseInRange) {
+        this.attackTarget(u, target, foes, target ? target.x : 130, 1.4);
+      }
+      u.bossPhase = 'recovery';
+      u.phaseTime = u.bossBehavior === 'guard' ? 3 : 2.2;
+      this.onEvent({ type: 'bossRecovery', id: u.id, glyph: u.glyph });
+    } else if (u.bossPhase === 'recovery') {
+      u.bossPhase = u.bossBehavior === 'guard' ? 'guard' : null;
+      u.phaseTime = u.bossBehavior === 'guard' ? 2.4 : 0;
+      u.timer = 0.2;
+    }
+    return true;
+  }
   attackTarget(u, target, foes, x, multiplier = 1) {
     const amount = u.attack * multiplier;
     const targetIds = [];
+    let dealt = amount;
     if (target) {
-      target.hp -= amount;
+      dealt = this.damageUnit(target, amount);
       targetIds.push(target.id);
       if (u.side === 1 && u.kind === 0) {
         for (const v of foes) if (v !== target && Math.abs(v.x - target.x) < 80) {
-          v.hp -= amount * 0.65;
+          this.damageUnit(v, amount * 0.65);
           targetIds.push(v.id);
         }
       }
       if (u.side === 1 && u.kind === 3) target.x = Math.min(1055, target.x + 24);
     } else if (u.side === 1) this.enemyHp = Math.max(0, this.enemyHp - amount);
     else this.homeHp = Math.max(0, this.homeHp - amount);
-    this.onEvent({ type: 'hit', from: u.x, x, amount: Math.round(amount),
+    this.onEvent({ type: 'hit', from: u.x, x, amount: Math.round(dealt),
       kind: u.kind, side: u.side, attackerId: u.id, targetIds });
   }
   updateTriple(u, dt, target, baseInRange, foes) {
     if (!u.bossPhase) {
       if (u.timer > 0 || (!target && !baseInRange)) return false;
       u.bossPhase = 'windup'; u.phaseTime = 1.2; u.strikes = 0;
-      this.onEvent({ type: 'bossWindup', id: u.id });
+      this.onEvent({ type: 'bossWindup', id: u.id, glyph: u.glyph });
       return true;
     }
     u.phaseTime -= dt;
@@ -333,7 +380,7 @@ export class Battle {
     if (target || baseInRange) this.attackTarget(u, target, foes, target ? target.x : 130, 0.6);
     if (u.strikes === 3) {
       u.bossPhase = 'recovery'; u.phaseTime = 2.5;
-      this.onEvent({ type: 'bossRecovery', id: u.id });
+      this.onEvent({ type: 'bossRecovery', id: u.id, glyph: u.glyph });
     } else u.phaseTime += 0.28;
     return true;
   }
@@ -371,8 +418,7 @@ export class Battle {
       const inRange = target && Math.abs(target.x - u.x) <= u.range;
       const base = u.side === 1 ? 1070 : 130;
       const baseInRange = Math.abs(base - u.x) <= u.range;
-      if (u.boss && this.config.boss.behavior === 'triple' &&
-          this.updateTriple(u, dt, inRange ? target : null, baseInRange, foes)) continue;
+      if (u.boss && this.updateSpecialBoss(u, dt, inRange ? target : null, baseInRange, foes)) continue;
       if (inRange || baseInRange) {
         if (u.timer <= 0) {
           u.timer = u.interval;
@@ -389,4 +435,13 @@ export class Battle {
     }
     this.resolve();
   }
+}
+
+export function bossStatus(u) {
+  if (!u?.bossPhase) return '';
+  if (u.bossPhase === 'guard') return '輪の守り · 65%軽減';
+  if (u.bossPhase === 'recovery') return u.bossBehavior === 'guard' ? '輪がゆるむ · 被ダメージ1.5倍' : 'ひとやすみ · 攻める好機';
+  if (u.bossPhase === 'volley') return '三連撃';
+  return u.bossBehavior === 'triple' ? '三連撃の構え'
+    : u.bossBehavior === 'sweep' ? '払いの構え · 前衛を補充' : '突きの構え';
 }

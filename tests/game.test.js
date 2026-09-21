@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Battle, HEROES, heroesFor, upgradeChoices } from "../src/game.js";
+import { Battle, HEROES, heroesFor, upgradeChoices, STAGES } from "../src/game.js";
 const run = (b, seconds) => {
   for (let t = 0; t < seconds; t += 1 / 60) b.update(1 / 60);
 };
@@ -93,7 +93,7 @@ test("勝利と敗北は一度だけ通知", () => {
     assert.equal(events.filter((e) => e.type === status).length, 1);
   }
 });
-for (let stage = 0; stage < 3; stage++)
+for (let stage = 0; stage < STAGES.length; stage++)
   test(`ページ${stage + 1}は通常操作で攻略できる`, () => {
     const b = new Battle(stage);
     b.start();
@@ -301,4 +301,109 @@ test('ボスEの三連撃は拠点にも適用され、通常のEは予告行動
   c.update(1 / 60);
   assert.equal(e.bossPhase, null);
   assert.equal(c.homeHp, 2000 - e.attack);
+});
+
+
+// 第2章も初期編成から攻略でき、章をまたいだ育成の持ち込みを前提にしない。
+test('章内は育成を引き継ぎ、章末と最終ページではリセットする', async () => {
+  const { CHAPTERS, isChapterEnd, nextLoadout } = await import('../src/stages.js');
+  assert.equal(CHAPTERS.length, 2);
+  assert.equal(STAGES.length, 6);
+  assert.deepEqual(STAGES.map(s => s.chapter), [0, 0, 0, 1, 1, 1]);
+  const ranks = [1, 1, 0, 0, 1];
+  assert.deepEqual(nextLoadout(1, ranks), ranks);
+  assert.notEqual(nextLoadout(1, ranks), ranks);
+  assert.deepEqual(nextLoadout(2, ranks), [0, 0, 0, 0, 0]);
+  assert.deepEqual(nextLoadout(5, ranks), [0, 0, 0, 0, 0]);
+  assert.ok(isChapterEnd(2)); assert.ok(isChapterEnd(5));
+  assert.equal(isChapterEnd(3), false);
+});
+
+function specialEncounter(stage, heroX = 590) {
+  const events = [], b = new Battle(stage, e => events.push(e));
+  b.start(); b.wave = b.config.waves; b.spawnBoss();
+  const boss = b.units[0]; boss.x = 700; boss.timer = 0;
+  const hero = b.addUnit(4, 1); hero.x = heroX; hero.speed = 0; hero.timer = 100;
+  b.update(1 / 60);
+  return { b, boss, hero, events };
+}
+
+test('Fは予兆後に射程内の前衛だけをまとめて押し戻す', () => {
+  const { b, boss, hero, events } = specialEncounter(1);
+  const second = b.addUnit(4, 1); second.x = 570; second.speed = 0; second.timer = 100;
+  const rear = b.addUnit(2, 1); rear.x = 480; rear.speed = 0; rear.timer = 100;
+  const hp = hero.hp;
+  run(b, 1.3);
+  assert.equal(hero.hp, hp); assert.equal(hero.x, 590);
+  run(b, 0.15);
+  assert.equal(hero.x, 505); assert.equal(second.x, 485); assert.equal(rear.x, 480);
+  assert.equal(rear.hp, rear.maxHp);
+  assert.ok(Math.abs(hero.hp - (hp - boss.attack * 1.4)) < 1e-8);
+  assert.equal(events.filter(e => e.type === 'hit').length, 2);
+  assert.equal(boss.bossPhase, 'recovery');
+  const x = boss.x, after = hero.hp;
+  run(b, 2);
+  assert.equal(boss.x, x); assert.equal(hero.hp, after);
+});
+
+test('Fは消しゴムで射程外に出ると空振りし、停止中は予兆が進まない', () => {
+  const { b, boss, hero, events } = specialEncounter(4, 550);
+  const remaining = boss.phaseTime;
+  b.status = 'paused'; run(b, 10); assert.equal(boss.phaseTime, remaining);
+  b.status = 'playing'; b.skill = 30; b.cast();
+  run(b, 1.5);
+  assert.equal(hero.hp, hero.maxHp); assert.equal(hero.x, 550);
+  assert.equal(events.filter(e => e.type === 'hit').length, 0);
+  assert.equal(boss.bossPhase, 'recovery');
+});
+
+test('Gは接敵時に防御、構え、突き、3秒の隙を順番に繰り返す', () => {
+  const { b, boss, hero, events } = specialEncounter(2);
+  assert.equal(boss.bossPhase, 'guard');
+  const hp = hero.hp;
+  run(b, 2.25); assert.equal(hero.hp, hp); assert.equal(boss.bossPhase, 'guard');
+  run(b, 0.2); assert.equal(boss.bossPhase, 'windup');
+  assert.equal(hero.hp, hp);
+  run(b, 1); assert.equal(boss.bossPhase, 'recovery');
+  assert.ok(Math.abs(hero.hp - (hp - boss.attack * 1.4)) < 1e-8);
+  assert.equal(events.filter(e => e.type === 'hit').length, 1);
+  run(b, 2.85); assert.equal(boss.bossPhase, 'recovery');
+  run(b, 0.2); assert.equal(boss.bossPhase, 'guard');
+});
+
+test('Gの防御と隙は通常攻撃・範囲攻撃・消しゴムすべてに適用される', () => {
+  for (const [phase, multiplier] of [['guard', 0.35], ['windup', 1], ['recovery', 1.5]]) {
+    const { b, boss } = specialEncounter(2);
+    boss.bossPhase = phase;
+    const hp = boss.hp;
+    const attacker = b.addUnit(0, 1);
+    b.attackTarget(attacker, boss, [boss], boss.x);
+    assert.ok(Math.abs(boss.hp - (hp - attacker.attack * multiplier)) < 1e-8);
+    const victim = b.addUnit(0, -1); victim.x = boss.x - 10;
+    const afterHit = boss.hp;
+    b.attackTarget(attacker, victim, [victim, boss], victim.x);
+    assert.ok(Math.abs(boss.hp - (afterHit - attacker.attack * 0.65 * multiplier)) < 1e-8);
+    const beforeSkill = boss.hp;
+    b.skill = 30; b.cast();
+    assert.ok(Math.abs(boss.hp - (beforeSkill - 240 * multiplier)) < 1e-8);
+  }
+});
+
+test('Gの防御時間は停止で凍結し、倒されたボスは攻撃しない', () => {
+  const { b, boss, hero, events } = specialEncounter(5);
+  const remaining = boss.phaseTime;
+  b.status = 'paused'; run(b, 8);
+  assert.equal(boss.phaseTime, remaining);
+  b.status = 'playing'; boss.hp = 1; b.skill = 30; b.cast(); run(b, 5);
+  assert.equal(hero.hp, hero.maxHp);
+  assert.equal(events.filter(e => e.type === 'hit').length, 0);
+});
+
+test('通常のF・Gにはボスの押し戻しや防御が付かない', () => {
+  const b = new Battle(5); b.start(); b.wave = b.config.waves;
+  const f = b.addUnit(5, -1), g = b.addUnit(6, -1), hero = b.addUnit(4, 1);
+  f.x = 650; g.x = 1100; hero.x = 560; hero.speed = 0; hero.timer = 100; f.timer = 0;
+  b.update(1 / 60);
+  assert.equal(hero.x, 560); assert.equal(f.bossPhase, null); assert.equal(g.bossPhase, null);
+  const hp = g.hp; b.damageUnit(g, 100); assert.equal(g.hp, hp - 100);
 });

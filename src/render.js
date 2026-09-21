@@ -1,3 +1,4 @@
+import { bossStatus } from './game.js';
 import { LETTERS } from './letters.js';
 const INK = '#575047';
 export class Renderer {
@@ -158,6 +159,14 @@ export class Renderer {
         const windup = u.bossPhase === 'windup' ? Math.max(0, 1 - u.phaseTime / 1.2) : 0;
         c.translate(windup * i * 1.5 - (u.strikes === i ? pulse * 8 : 0), 0);
       }
+      if (u.bossBehavior === 'sweep' && !this.reducedMotion.matches) {
+        const windup = u.bossPhase === 'windup' ? Math.max(0, 1 - u.phaseTime / 1.4) : 0;
+        c.translate(windup * 4 - pulse * 10, 0);
+        if (i === 1) c.rotate(-pulse * 0.06);
+      }
+      if (u.bossBehavior === 'guard' && u.bossPhase === 'windup' && !this.reducedMotion.matches) {
+        c.rotate(-Math.max(0, 1 - u.phaseTime) * 0.05);
+      }
       c.drawImage(stroke, -size / 2, -size * 0.94, size, size * 1.1);
       c.restore();
     });
@@ -208,15 +217,20 @@ export class Renderer {
     const tilt = [0.12, 0.08, -0.09, 0.13, 0.045][u.kind % 5];
     c.rotate(walk * 0.017 + motion * tilt * u.side);
     c.scale(1 + Math.abs(motion) * 0.025, 1 - Math.abs(motion) * 0.025);
+    if (u.bossBehavior === 'guard' && !this.reducedMotion.matches) {
+      if (u.bossPhase === 'guard') c.scale(0.96, 1.025);
+      if (u.bossPhase === 'recovery') c.rotate(0.07);
+    }
     c.globalAlpha = hit ? 0.65 : 0.95;
     this.drawStrokes(u, size, phase);
     c.restore();
     if (u.bossPhase) {
-      const labels = { windup: '三連撃の構え', volley: '三連撃', recovery: 'ひとやすみ' };
+      const label = bossStatus(u);
       c.save();
       c.font = '13px serif'; c.textAlign = 'center';
-      c.fillStyle = '#faf6ede8'; c.fillRect(x - 51, y - size - 22, 102, 22);
-      c.fillStyle = INK; c.fillText(labels[u.bossPhase], x, y - size - 6);
+      c.fillStyle = '#faf6ede8'; const width = c.measureText(label).width + 18;
+      c.fillRect(x - width / 2, y - size - 22, width, 22);
+      c.fillStyle = INK; c.fillText(label, x, y - size - 6);
       c.restore();
     }
     if (u.hp < u.maxHp) {

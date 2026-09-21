@@ -170,3 +170,17 @@ dialog li { margin: 12px 0; }
 .page-label, #wave { white-space: nowrap; flex-shrink: 0; }
 .stage-button { min-width: 0; }
 .battle-tools { flex-shrink: 0; }
+
+.chapter-caption { font-size: 10px; letter-spacing: .1em; color: #81745f; margin-bottom: 5px; }
+.chapter-letters { display: flex; justify-content: center; gap: 5px; margin: 8px auto; }
+.chapter-letters .letter { width: 36px; height: 40px; }
+.overlay-actions { flex-wrap: wrap; }
+.chapter-heading { padding: 10px 0; border-bottom: 1px solid #c9bda8; }
+@media (max-width: 540px) {
+  .overlay:has(.chapter-letters) { bottom: 2%; padding: 8px; }
+  .overlay:has(.chapter-letters) h2 { font-size: 16px; }
+  .chapter-letters { margin: 4px auto; }
+  .chapter-letters .letter { width: 24px; height: 27px; }
+  .overlay:has(.chapter-letters) .overlay-actions { gap: 3px 8px; }
+  .overlay:has(.chapter-letters) .primary { padding: 0 12px; }
+}

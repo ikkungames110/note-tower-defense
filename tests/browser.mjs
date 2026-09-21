@@ -87,7 +87,16 @@ try {
   await page.setViewportSize({ width: 1440, height: 1050 });
   await page.reload();
   assert.match(await page.title(), /^ノート上の戦い/);
-  for (let stage = 0; stage < 3; stage++) {
+  // 旧3ページ版の記録をそのまま読み、第2章の先頭だけが新たに解放される。
+  await page.evaluate(() => localStorage.setItem('mojimoji-progress', '[0,1,2]'));
+  await page.reload();
+  await page.locator('#stages').click();
+  assert.equal(await page.locator('.chapter-heading').count(), 2);
+  assert.equal(await page.locator('[data-stage]').count(), 6);
+  assert.ok(await page.locator('[data-stage="3"]').isEnabled());
+  assert.ok(await page.locator('[data-stage="4"]').isDisabled());
+  await page.keyboard.press('Escape');
+  for (let stage = 0; stage < 6; stage++) {
     await page.locator('#start').click();
     await page.evaluate(() => {
       const b = window.testBattle.battle;
@@ -112,11 +121,28 @@ try {
     const expected = await page.locator('[data-evolve]').first().getAttribute('aria-label');
     await page.locator('[data-evolve]').first().click();
     assert.equal(await page.locator('[data-evolve]').count(), 0);
-    if (stage < 2) {
+    if (stage === 2) {
+      assert.equal(await page.locator('.chapter-letters .letter').count(), 5);
+      assert.match(await page.locator('#overlay').innerText(), /次の章は/);
+      await page.setViewportSize({ width: 320, height: 844 });
+      await page.screenshot({ path: 'test-results/chapter-clear-mobile.png', fullPage: true });
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      await page.locator('#start').click();
+      assert.equal(await page.locator('.final-letters .letter').count(), 5);
+      await page.keyboard.press('Escape');
+      await page.setViewportSize({ width: 1440, height: 1050 });
+    }
+    if (stage < 5) {
       await page.locator('#next').click();
       const glyph = await page.evaluate(kind => window.testBattle.battle.heroes[kind].glyph, kind);
-      assert.ok(expected.endsWith(`${glyph}に強化`));
-      assert.ok((await page.locator(`[data-unit="${kind}"]`).getAttribute('aria-label')).startsWith(glyph));
+      if (stage === 2) {
+        assert.deepEqual(await page.evaluate(() => window.testBattle.battle.heroes.map(h => h.rank)), [0, 0, 0, 0, 0]);
+        assert.match(await page.locator('#chapter-name').innerText(), /第2章/);
+        await page.screenshot({ path: 'test-results/chapter-two.png', fullPage: true });
+      } else {
+        assert.ok(expected.endsWith(`${glyph}に強化`));
+        assert.ok((await page.locator(`[data-unit="${kind}"]`).getAttribute('aria-label')).startsWith(glyph));
+      }
     } else {
       await page.locator('#start').click();
       assert.equal(await page.locator('.final-letters .letter').count(), 5);
@@ -217,9 +243,56 @@ try {
     }
     await page.screenshot({ path: `test-results/fold-mobile-${width}.png`, fullPage: true });
   }
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  for (const [stage, glyph, initial, seconds, recovered] of [
+    [4, 'F', /払いの構え/, 1.5, /攻める好機/],
+    [5, 'G', /65%軽減/, 3.5, /1.5倍/],
+  ]) {
+    await page.locator('#stages').click();
+    await page.locator(`[data-stage="${stage}"]`).click();
+    await page.locator('#start').click();
+    await page.evaluate(() => {
+      const { battle: b, renderer: r } = window.testBattle;
+      b.wave = b.config.waves; b.units = []; b.queue = []; r.effects = [];
+      b.spawnBoss(); const boss = b.units[0]; boss.x = 760; boss.timer = 0;
+      const hero = b.addUnit(4, 1); hero.x = 650; hero.speed = 0; hero.timer = 100;
+      const rear = b.addUnit(2, 1); rear.x = 500; rear.speed = 0; rear.timer = 100;
+      b.update(1 / 60); b.status = 'paused';
+    });
+    await page.waitForTimeout(150);
+    assert.match(await page.locator('#battle-hint').innerText(), initial);
+    await page.screenshot({ path: `test-results/${glyph}-prepare.png`, fullPage: true });
+    await page.evaluate(seconds => {
+      const b = window.testBattle.battle; b.status = 'playing';
+      for (let i = 0; i < seconds * 60; i++) b.update(1 / 60);
+      b.status = 'paused';
+    }, seconds);
+    await page.waitForTimeout(150);
+    assert.match(await page.locator('#battle-hint').innerText(), recovered);
+    await page.screenshot({ path: `test-results/${glyph}-recovery.png`, fullPage: true });
+  }
+  // 章末の再挑戦でも、そのページに入った時点の編成に戻る。
+  await page.reload();
+  await page.locator('#stages').click();
+  await page.locator('[data-stage="2"]').click();
+  await page.locator('#start').click();
+  await page.evaluate(() => {
+    const b = window.testBattle.battle; b.spawnBoss();
+    b.units.find(u => u.boss).hp = 0; b.enemyHp = 0; b.resolve();
+  });
+  await page.locator('[data-evolve]').first().click();
+  await page.locator('#retry').click();
+  assert.deepEqual(await page.evaluate(() => window.testBattle.battle.heroes.map(h => h.rank)), [0, 0, 0, 0, 0]);
+  assert.equal(await page.evaluate(() => window.testBattle.battle.status), 'playing');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.locator('#stages').click();
+  await page.screenshot({ path: 'test-results/chapters.png', fullPage: true });
+  await page.locator('[data-stage="3"]').click();
+  assert.equal(await page.locator('.field').evaluate(el => el.getAnimations().length), 0);
+  assert.match(await page.locator('#chapter-name').innerText(), /第2章/);
   assert.deepEqual(errors, []);
   console.log(
-    "ブラウザー検証成功：出撃、停止、図鑑、速度、音声、解放制限、モバイル表示、ウェーブ予告、折り目、Eの予兆と休止、攻撃演出、動きを減らす設定、実行時エラーなし",
+    "ブラウザー検証成功：出撃、停止、図鑑、速度、音声、解放制限、モバイル表示、ウェーブ予告、折り目、E・F・Gの専用行動、全6ページ攻略、章内育成と章間リセット、旧記録互換、攻撃演出、動きを減らす設定、実行時エラーなし",
   );
 } finally {
   await browser?.close();
