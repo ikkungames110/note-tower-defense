@@ -290,7 +290,7 @@ try {
   await page.locator('#stages').click();
   await page.screenshot({ path: 'test-results/chapters.png', fullPage: true });
   await page.locator('[data-stage="3"]').click();
-  assert.equal(await page.locator('.field').evaluate(el => el.getAnimations().length), 0);
+  assert.equal(await page.locator('.field').evaluate(el => el.getAnimations({ subtree: true }).length), 0);
   assert.match(await page.locator('#chapter-name').innerText(), /第2章/);
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.locator('#stages').click(); await page.locator('[data-stage="8"]').click();
@@ -328,6 +328,16 @@ try {
   await page.waitForTimeout(150);
   assert.match(await page.locator('#battle-hint').innerText(), /Z：払いの構え/);
   await page.screenshot({ path: 'test-results/final-boss.png', fullPage: true });
+  // 画面サイズや背景フィルターの異なる章を往復しても開始ボタンを操作できる。
+  for (const width of [390, 1440]) {
+    await page.setViewportSize({ width, height: 1050 });
+    for (const stage of [0, 11, 3, 8]) {
+      await page.locator('#stages').click();
+      await page.locator(`[data-stage="${stage}"]`).click();
+      await page.locator('#start').click();
+      assert.equal(await page.evaluate(() => window.testBattle.battle.status), 'playing');
+    }
+  }
   await page.addInitScript(() => Object.defineProperty(window, 'localStorage', { get() { throw new Error('Storage unavailable'); } }));
   await page.reload(); await page.locator('#start').click();
   await page.evaluate(() => {

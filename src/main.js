@@ -76,10 +76,11 @@ function newBattle(stage = 0, loadout = [0, 0, 0, 0, 0]) {
     }
     if (e.type === "lost") showOverlay();
   }, ranks);
-  $('.field').getAnimations().forEach(animation => animation.cancel());
+  $('.scene').getAnimations().forEach(animation => animation.cancel());
   $('.field').dataset.chapter = battle.config.chapter;
   if (changingPage && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    $('.field').animate([{ opacity: 0.6 }, { opacity: 1 }], { duration: 320, easing: 'ease-out' });
+    // 操作面を含む親は合成レイヤーにせず、背景だけを切り替える。
+    $('.scene').animate([{ opacity: 0.6 }, { opacity: 1 }], { duration: 320, easing: 'ease-out' });
   }
   $('#chapter-name').textContent = `第${battle.config.chapter + 1}章 · ${CHAPTERS[battle.config.chapter]}`;
   refreshCards();
