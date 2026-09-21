@@ -10,7 +10,7 @@ export default defineConfig(({ command }) => ({
     async closeBundle() {
       await mkdir('dist/assets', { recursive: true });
       await Promise.all([
-        ...['classroom-notebook.png', 'eraser-soft.png', 'base-home.png', 'base-enemy.png'].map(name => copyFile(`public/assets/${name}`, `dist/assets/${name}`)),
+        ...['classroom-notebook.png', 'eraser-soft.png'].map(name => copyFile(`public/assets/${name}`, `dist/assets/${name}`)),
         copyFile('public/favicon.svg', 'dist/favicon.svg'),
       ]);
     },

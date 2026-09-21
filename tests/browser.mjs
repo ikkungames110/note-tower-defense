@@ -26,7 +26,6 @@ try {
   });
   await page.evaluate(() => Promise.all([
     window.testBattle.renderer.eraser.decode(),
-    ...window.testBattle.renderer.bases.map(image => image.decode()),
   ]));
   await page.screenshot({ path: "test-results/desktop.png", fullPage: true });
   await page.locator("#start").click();

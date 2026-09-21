@@ -9,11 +9,7 @@ export class Renderer {
     this.effects = [];
     this.eraser = new Image();
     this.eraser.src = `${import.meta.env.BASE_URL}assets/eraser-soft.png`;
-    this.bases = ['home', 'enemy'].map(side => {
-      const sprite = new Image();
-      sprite.src = `${import.meta.env.BASE_URL}assets/base-${side}.png`;
-      return sprite;
-    });
+    this.baseSprite = this.makeLetter(['M14 95 L15 46 L28 46 L29 57 L40 57 L40 41 L61 41 L61 57 L72 57 L72 45 L85 45 L86 95 Z', 'M40 94 L41 73 Q50 61 60 73 L60 94', 'M50 41 L50 13 L73 20 L51 29', 'M24 67 L24 76', 'M76 67 L76 76']);
     this.reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
     this.sprites = Object.fromEntries(Object.entries(LETTERS).map(([glyph, paths]) => [glyph, this.makeLetter(paths)]));
     this.strokes = Object.fromEntries(Object.entries(LETTERS).map(([glyph, paths]) =>
@@ -90,8 +86,8 @@ export class Renderer {
     c.setTransform(this.canvas.width / 1200, 0, 0, this.canvas.height / 440, 0, 0);
     c.clearRect(0, 0, 1200, 440);
     this.fold(b.config.fold);
-    this.base(105, b.homeHp / 2000, '自分の拠点', this.bases[0]);
-    this.base(1095, b.enemyHp / b.config.hp, '相手の拠点', this.bases[1]);
+    this.base(105, b.homeHp / 2000, '自分の拠点');
+    this.base(1095, b.enemyHp / b.config.hp, '相手の拠点');
     if (b.status === 'ready') {
       [...b.heroes.map(h => h.glyph), ...'ABCD', ENEMIES[b.config.boss.kind].glyph].forEach((glyph, i) => this.unit({
         glyph, x: i < 5 ? 206 + i * 77 : 699 + (i - 5) * 77,
@@ -206,7 +202,7 @@ export class Renderer {
       c.restore();
     });
   }
-  base(x, ratio, label, sprite) {
+  base(x, ratio, label) {
     const c = this.ctx;
     c.save();
     c.translate(x, 300);
@@ -215,15 +211,12 @@ export class Renderer {
     c.fillText(label, 0, 28);
     c.fillStyle = '#5d524b25'; c.fillRect(-30, 36, 60, 2);
     c.fillStyle = '#776956'; c.fillRect(-30, 36, 60 * Math.max(0, ratio), 2);
-    if (sprite.complete && sprite.naturalWidth) {
-      const width = 160, height = width * sprite.naturalHeight / sprite.naturalWidth;
-      c.save();
-      c.fillStyle = '#554c4014';
-      c.beginPath(); c.ellipse(0, 0, 55, 5, 0, 0, Math.PI * 2); c.fill();
-      c.globalAlpha = 0.9;
-      c.drawImage(sprite, -width / 2, -height + 12, width, height);
-      c.restore();
-    }
+    c.save();
+    c.transform(1, 0.13, -0.8, -0.25, 0, 0);
+    c.globalAlpha = 0.3; c.filter = 'blur(1px)';
+    c.drawImage(this.baseSprite, -55, -106, 110, 121);
+    c.restore();
+    c.drawImage(this.baseSprite, -55, -106, 110, 121);
     c.restore();
   }
   unit(u) {
