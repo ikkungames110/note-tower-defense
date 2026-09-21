@@ -1,4 +1,4 @@
-import { bossStatus } from './game.js';
+import { bossStatus, ENEMIES } from './game.js';
 import { LETTERS } from './letters.js';
 const INK = '#575047';
 export class Renderer {
@@ -13,6 +13,12 @@ export class Renderer {
     this.sprites = Object.fromEntries(Object.entries(LETTERS).map(([glyph, paths]) => [glyph, this.makeLetter(paths)]));
     this.strokes = Object.fromEntries(Object.entries(LETTERS).map(([glyph, paths]) =>
       [glyph, paths.map((path, i) => this.makeLetter([path], i))]));
+    this.paths = Object.fromEntries(Object.entries(LETTERS).map(([glyph, paths]) => [glyph, paths.map(d => {
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', d);
+      return { path: new Path2D(d), length: path.getTotalLength() };
+    })]));
+    this.shadows = Object.fromEntries(Object.entries(this.sprites).map(([glyph, sprite]) => [glyph, this.makeShadow(sprite)]));
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(canvas);
     this.resize();
@@ -41,6 +47,30 @@ export class Renderer {
     c.putImageData(pixels, 0, 0);
     return canvas;
   }
+  makeShadow(sprite) {
+    const canvas = document.createElement('canvas'); canvas.width = 320; canvas.height = 140;
+    const c = canvas.getContext('2d'); c.translate(90, 80);
+    c.transform(1, 0.13, -0.8, -0.25, 0, 0);
+    c.globalAlpha = 0.36; c.filter = 'blur(1px)';
+    c.drawImage(sprite, -50, -94, 100, 110);
+    return canvas;
+  }
+  drawWriting(u, size, progress) {
+    const c = this.ctx, paths = this.paths[u.glyph];
+    c.save();
+    c.globalAlpha *= 0.18;
+    c.drawImage(this.sprites[u.glyph], -size / 2, -size * 0.94, size, size * 1.1);
+    c.restore(); c.save();
+    c.translate(-size / 2, -size * 0.94); c.scale(size / 100, size / 100);
+    c.strokeStyle = INK; c.lineCap = c.lineJoin = 'round';
+    paths.forEach(({ path, length }, i) => {
+      const part = Math.min(1, Math.max(0, progress * paths.length - i));
+      if (!part) return;
+      c.lineWidth = 2.6 + i * 0.15;
+      c.setLineDash([length * part, length + 1]); c.stroke(path);
+    });
+    c.restore();
+  }
   resize() {
     const d = Math.min(devicePixelRatio || 1, 2);
     this.canvas.width = Math.round(this.canvas.clientWidth * d);
@@ -58,7 +88,7 @@ export class Renderer {
     this.base(105, b.homeHp / 2000, '自分の拠点');
     this.base(1095, b.enemyHp / b.config.hp, '相手の拠点');
     if (b.status === 'ready') {
-      [...b.heroes.map(h => h.glyph), ...'ABCD', 'ABCDEFG'[b.config.boss.kind]].forEach((glyph, i) => this.unit({
+      [...b.heroes.map(h => h.glyph), ...'ABCD', ENEMIES[b.config.boss.kind].glyph].forEach((glyph, i) => this.unit({
         glyph, x: i < 5 ? 206 + i * 77 : 699 + (i - 5) * 77,
         id: i, kind: i % 5, side: i < 5 ? 1 : -1,
         boss: i === 9, hp: 1, maxHp: 1, action: 0, moving: false, stride: 0,
@@ -72,7 +102,7 @@ export class Renderer {
       c.beginPath(); c.rect(0, 0, Math.max(0, edge), 440); c.clip();
       for (const u of e.erased || []) {
         if (!b.units.some(live => live.id === u.id)) {
-          const size = u.boss ? 125 : 79;
+          const size = u.obstacle ? 36 : u.boss ? 125 : 79;
           c.drawImage(this.sprites[u.glyph], u.x - size / 2, 290 + (u.id % 3) * 11 - size * 0.94, size, size * 1.1);
         }
       }
@@ -88,7 +118,10 @@ export class Renderer {
       c.strokeStyle = INK;
       c.lineWidth = 1.6;
       // 遠距離攻撃だけ短く筆跡が飛ぶ。ダメージはゲーム側ですでに適用済み。
-      if (e.type === 'hit' && Math.abs(e.x - e.from) > 125) {
+      if (e.type === 'defeat' && e.unit && !this.effects.some(effect => effect.type === 'skill' && effect.erased?.some(u => u.id === e.unit.id))) {
+        const u = e.unit, size = u.obstacle ? 36 : u.boss ? 125 : 79;
+        c.drawImage(this.sprites[u.glyph], u.x - size / 2, 290 + (u.id % 3) * 11 - size * 0.94, size, size * 1.1);
+      } else if (e.type === 'hit' && Math.abs(e.x - e.from) > 125) {
         const t = Math.min(1, p * 2.5);
         const x = e.from + (e.x - e.from) * t;
         const y = 252 - Math.sin(t * Math.PI) * 38;
@@ -196,25 +229,17 @@ export class Renderer {
     const phase = u.action > 0 ? 1 - u.action / 0.38 : 0;
     const motion = this.reducedMotion.matches ? 0 : Math.sin(phase * Math.PI * 2);
     const hit = this.effects.some(e => e.type === 'hit' && e.targetIds?.includes(u.id) && e.life < 0.12);
-    const size = u.boss ? 125 : 79;
+    const size = u.obstacle ? 36 : u.boss ? 125 : 79;
     const x = u.x + motion * 7 * u.side;
     const y = 290 + lane - Math.abs(walk) * 2;
-    // 同じ筆跡を紙面へ投影した影で、薄い文字が垂直に立つことを表す。
+    // 投影影は一度だけ描き、人数が増えても毎フレームぼかし処理を重ねない。
     c.save();
-    c.translate(x, 290 + lane);
-    c.transform(1, 0.13, -0.8, -0.25, 0, 0);
-    c.globalAlpha = 0.36;
-    c.filter = 'blur(1px)';
-    c.drawImage(sprite, -size / 2, -size * 0.94, size, size * 1.1);
-    c.restore();
-    c.save();
-    c.fillStyle = '#4d423316';
-    c.filter = 'blur(2px)';
-    c.beginPath(); c.ellipse(x, 291 + lane, size * 0.26, 2.5, 0, 0, Math.PI * 2); c.fill();
+    c.globalAlpha = u.writingLeft > 0 ? 0.5 : 1;
+    c.drawImage(this.shadows[u.glyph], x - size * 0.9, 290 + lane - size * 0.8, size * 3.2, size * 1.4);
     c.restore();
     c.save();
     c.translate(x + (hit ? -u.side * 3 : 0), y);
-    const tilt = [0.12, 0.08, -0.09, 0.13, 0.045][u.kind % 5];
+    const tilt = [0.12, 0.08, -0.09, 0.13, 0.045][Math.max(0, u.kind) % 5];
     c.rotate(walk * 0.017 + motion * tilt * u.side);
     c.scale(1 + Math.abs(motion) * 0.025, 1 - Math.abs(motion) * 0.025);
     if (u.bossBehavior === 'guard' && !this.reducedMotion.matches) {
@@ -222,10 +247,17 @@ export class Renderer {
       if (u.bossPhase === 'recovery') c.rotate(0.07);
     }
     c.globalAlpha = hit ? 0.65 : 0.95;
-    this.drawStrokes(u, size, phase);
+    const progress = u.writingLeft > 0 ? 1 - u.writingLeft / u.writingDuration
+      : u.age != null && u.age < 0.4 ? u.age / 0.4 : 1;
+    if (progress < 1 && !this.reducedMotion.matches) this.drawWriting(u, size, progress);
+    else {
+      if (u.writingLeft > 0) c.globalAlpha *= 0.45;
+      this.drawStrokes(u, size, phase);
+    }
     c.restore();
-    if (u.bossPhase) {
-      const label = bossStatus(u);
+    if (u.bossPhase || u.writingLeft > 0 || u.obstacle) {
+      const label = u.writingLeft > 0 ? `書きかけ ${Math.ceil(u.writingLeft)}秒`
+        : u.obstacle ? `読点 ${Math.ceil(u.ttl)}秒` : bossStatus(u);
       c.save();
       c.font = '13px serif'; c.textAlign = 'center';
       c.fillStyle = '#faf6ede8'; const width = c.measureText(label).width + 18;

@@ -1,8 +1,8 @@
 // 時刻・敵の並び・出現間隔をページごとに設計する。番号から敵やボスを推測しない。
 const wave = (at, enemies, label, spacing = 2.3) => ({
-  at, label, spacing, enemies: [...enemies].map(glyph => 'ABCDEFG'.indexOf(glyph)),
+  at, label, spacing, enemies: [...enemies].map(glyph => 'ABCDEFGHZ'.indexOf(glyph)),
 });
-export const CHAPTERS = ['はじまりの余白', '折り目の向こう'];
+export const CHAPTERS = ['はじまりの余白', '折り目の向こう', '書きかけのページ', 'さいごの見開き'];
 export const STAGES = [
   {
     name: 'はじまりの1ページ', subtitle: 'まずは、余白からはじめよう。',
@@ -84,6 +84,87 @@ export const STAGES = [
       wave(67, 'DFABACACC', '折り目にたまる敵に備えよう'),
       wave(83, 'DABEAFCABC', '最後の消しゴムをためよう', 1.8),
       wave(99, 'DFEABACABCC', 'Gの輪がゆるむ瞬間に総攻撃'),
+    ],
+  },
+  {
+    name: '書きかけの文字', subtitle: '完成する前に、もう一歩。',
+    tip: '薄い文字は4秒で完成。書かれている間は動きませんが、攻撃で倒せます。',
+    hp: 2500, strength: 1.25, boss: { kind: 4, behavior: 'triple' },
+    writing: { duration: 4, x: 870 },
+    wavePlan: [
+      wave(3, 'AAA', '薄い文字は書きかけ'),
+      wave(23, 'ABAC', '完成前に前線を押し上げよう'),
+      wave(43, 'DAABCC', '守りながら書きかけを狙おう'),
+      wave(63, 'AAABBACC', '群れには「あ」の輪を', 1.5),
+      wave(83, 'DBACABCC', 'Eの休止中に書きかけも攻撃'),
+    ],
+  },
+  {
+    name: '読点でひと休み', subtitle: '小さな点にも、意味がある。',
+    tip: 'Hが置く「、」は道をふさぎます。「あ」でまとめて消すか、8秒で消えるのを待とう。',
+    hp: 2900, strength: 1.35, boss: { kind: 5, behavior: 'sweep' },
+    punctuation: true,
+    wavePlan: [
+      wave(3, 'AAH', 'Hは前に読点を置く'),
+      wave(22, 'ABAHC', '「あ」で読点ごと攻撃'),
+      wave(41, 'DACHAC', '後ろのHにも前線を届けよう'),
+      wave(60, 'AAHABBCC', '消しゴムでも読点を消せる', 1.7),
+      wave(79, 'DAHCEABC', '払いで戻されても前衛を補充'),
+    ],
+  },
+  {
+    name: '書き終わるまでに', subtitle: '待つ時間と、攻める時間。',
+    tip: '書きかけの敵と読点が重なるページ。Gの隙に消しゴムを合わせ、道を開こう。',
+    hp: 3400, strength: 1.45, boss: { kind: 6, behavior: 'guard' },
+    writing: { duration: 4, x: 880 }, punctuation: true,
+    wavePlan: [
+      wave(3, 'AABAC', '完成する前に前線を作ろう'),
+      wave(21, 'AHABCC', 'Hが読点を書き始める'),
+      wave(39, 'DABHACC', '「あ」で道を開き「う」で援護'),
+      wave(57, 'DEAHBACC', '書きかけのEを狙おう'),
+      wave(75, 'DFAAHBACC', '消しゴムの好機を待とう'),
+      wave(93, 'DFEHABACCC', 'Gの輪がゆるむ3秒に攻めよう'),
+    ],
+  },
+  {
+    name: '折り目と書きかけ', subtitle: '覚えたことを、この一行に。',
+    tip: '折り目の向こうに書きかけの敵。初期編成から、遠距離の援護を育てよう。',
+    hp: 2700, strength: 1.3, boss: { kind: 4, behavior: 'triple' },
+    writing: { duration: 4, x: 870 }, fold: { from: 610, to: 710, speed: 0.5 },
+    wavePlan: [
+      wave(3, 'AAAB', '最後の章の前線を作ろう'),
+      wave(23, 'AABACC', '折り目を「う」の射程で越えよう'),
+      wave(43, 'DABACCC', '完成前の敵を狙って前進'),
+      wave(63, 'DAABABCC', '育てたい役割を考えよう'),
+      wave(83, 'DBACABACC', 'Eの三連撃後に押し切ろう'),
+    ],
+  },
+  {
+    name: '消さずに残した一行', subtitle: '最後の見開きへ、つなごう。',
+    tip: '折り目に読点が重なります。前衛を途切れさせず、範囲攻撃で道を開こう。',
+    hp: 3300, strength: 1.45, boss: { kind: 5, behavior: 'sweep' },
+    punctuation: true, fold: { from: 500, to: 600, speed: 0.5 },
+    wavePlan: [
+      wave(3, 'ABAHC', 'Hと折り目に備えよう'),
+      wave(21, 'AAHABBCC', '読点は「あ」でまとめて', 1.5),
+      wave(39, 'DAHABACC', '後衛を守って前進'),
+      wave(57, 'DEAHBACC', '鉛筆を残して前衛を補充'),
+      wave(75, 'DABHAEACC', '攻勢の合間に回復を強化'),
+      wave(93, 'DFAHBACC', 'Fを倒して最後のページへ'),
+    ],
+  },
+  {
+    name: 'さいごの一文字', subtitle: 'チャイムが鳴る、その前に。',
+    tip: '最後のZは三連撃。HPが半分になると、払い・守り・三連撃を順に使います。',
+    hp: 3800, strength: 1.5, boss: { kind: 8, behavior: 'triple', finale: true },
+    writing: { duration: 4, x: 880 }, punctuation: true,
+    wavePlan: [
+      wave(3, 'AABAC', '育てた文字で前線を作ろう'),
+      wave(22, 'AHABCC', '書きかけと読点を越えよう'),
+      wave(41, 'DABHACC', '範囲と射程で道を開こう'),
+      wave(60, 'DEAHBACC', '前衛を守り、鉛筆をためよう'),
+      wave(79, 'DFABHACC', '覚えた戦い方を合わせよう'),
+      wave(98, 'DFAEHABACC', '最終ボスZ・構えを見て備えよう'),
     ],
   },
 ].map((stage, i) => ({ ...stage, chapter: Math.floor(i / 3), waves: stage.wavePlan.length }));

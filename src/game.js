@@ -134,20 +134,31 @@ export const EVOLUTION = ['あかさた', 'いきしち', 'うくすつ', 'え�
 export function heroesFor(ranks = [0, 0, 0, 0, 0]) {
   return HEROES.map((h, i) => {
     const rank = Math.max(0, Math.min(3, Math.trunc(ranks[i] || 0)));
-    return { ...h, glyph: EVOLUTION[i][rank], hp: h.hp * (1 + rank * 0.08), attack: h.attack * (1 + rank * 0.08), rank };
+    return { ...h, glyph: EVOLUTION[i][rank], hp: h.hp * (1 + rank * 0.08), attack: h.attack * (1 + rank * 0.08), rank,
+      range: h.range + (i === 2 ? rank * 12 : 0), splash: 80 + (i === 0 ? rank * 16 : 0),
+      openingSpeed: i === 1 ? 1 + rank * 0.15 : 1,
+      knockback: 24 + (i === 3 ? rank * 8 : 0), firstGuard: i === 4 ? rank * 0.15 : 0 };
   });
 }
 export function upgradeChoices(ranks, random = Math.random) {
-  const candidates = heroesFor(ranks).flatMap((h, kind) => h.rank < 3 ? [{ kind, from: h.glyph, glyph: EVOLUTION[kind][h.rank + 1] }] : []);
+  const candidates = heroesFor(ranks).flatMap((h, kind) => h.rank < 3 ? [{ kind, from: h.glyph, glyph: EVOLUTION[kind][h.rank + 1], rank: h.rank + 1 }] : []);
   for (let i = candidates.length - 1; i > 0; i--) {
     const j = Math.floor(random() * (i + 1));
     [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
   }
   return candidates.slice(0, 3);
 }
+export function growthDescription(kind, rank) {
+  return ['範囲 +' + rank * 16, '出撃4秒間の速さ +' + rank * 15 + '%',
+    '射程 +' + rank * 12, '押し戻し +' + rank * 8, '最初の被ダメージ −' + rank * 15 + '%'][kind];
+}
 ENEMIES.push(
   { glyph: 'F', name: 'ふたすじ払い', hp: 380, attack: 46, range: 155, speed: 23, interval: 2.2, description: '二本の横線を払って、前線へ迫る。' },
   { glyph: 'G', name: 'うずまき突き', hp: 420, attack: 50, range: 125, speed: 22, interval: 2.3, description: '大きく曲がった輪から内側の線を突き出す。' },
+);
+ENEMIES.push(
+  { glyph: 'H', name: '読点を書くもの', hp: 260, attack: 25, range: 160, speed: 20, interval: 2.4, description: '8秒で消える「、」を前に置く。範囲攻撃で道を開こう。' },
+  { glyph: 'Z', name: 'さいごの一文字', hp: 1100, attack: 50, range: 200, speed: 18, interval: 2.5, description: '最後のボス。HPが半分になると、払い・守り・三連撃を順に使う。' },
 );
 export class Battle {
   constructor(stage = 0, onEvent = () => {}, ranks = [0, 0, 0, 0, 0]) {
@@ -216,6 +227,12 @@ export class Battle {
       action: 0,
       stride: 0,
       moving: false,
+      age: 0,
+      shieldAvailable: side === 1 && h.firstGuard > 0,
+      writingLeft: 0,
+      punctuationTimer: 3,
+      finale: boss && Boolean(this.config.boss.finale),
+      finaleStep: 0,
       bossBehavior: boss ? this.config.boss.behavior : null,
       bossPhase: boss && this.config.boss.behavior === 'guard' ? 'guard' : null,
       phaseTime: boss && this.config.boss.behavior === 'guard' ? 2.4 : 0,
@@ -243,7 +260,7 @@ export class Battle {
     for (const u of this.units)
       if (u.side === -1) {
         this.damageUnit(u, 240);
-        u.x = Math.min(1055, u.x + 65);
+        if (!u.obstacle) u.x = Math.min(1055, u.x + 65);
       }
     this.enemyHp = Math.max(0, this.enemyHp - 100);
     this.onEvent({ type: "skill", erased });
@@ -255,11 +272,11 @@ export class Battle {
     for (const u of this.units)
       if (u.hp <= 0) {
         if (u.boss) this.bossDefeated = true;
-        if (u.side === -1) {
+        if (u.side === -1 && !u.obstacle) {
           this.kills++;
           this.ink = Math.min(this.capacity, this.ink + 22 + u.kind * 9);
         }
-        this.onEvent({ type: "defeat", x: u.x, side: u.side, kind: u.kind });
+        this.onEvent({ type: "defeat", x: u.x, side: u.side, kind: u.kind, unit: { ...u } });
       }
     this.units = this.units.filter((u) => u.hp > 0);
     // 拠点を早く削っても、ボスとの戦闘は必ず行う。
@@ -282,25 +299,28 @@ export class Battle {
   moveDistance(u, dt) {
     if (u.speed <= 0) return 0;
     const fold = this.config.fold;
-    if (!fold) return u.speed * dt;
+    const speed = u.speed * (u.side === 1 && u.age < 4 ? u.openingSpeed : 1);
+    if (!fold) return speed * dt;
     const entry = u.side === 1 ? fold.from : fold.to;
     const exit = u.side === 1 ? fold.to : fold.from;
     let x = u.x, remaining = dt, distance = 0;
     if ((entry - x) * u.side > 0) {
-      const d = Math.min((entry - x) * u.side, u.speed * remaining);
-      distance += d; x += d * u.side; remaining -= d / u.speed;
+      const d = Math.min((entry - x) * u.side, speed * remaining);
+      distance += d; x += d * u.side; remaining -= d / speed;
     }
     if ((exit - x) * u.side > 0 && remaining > 0) {
-      const d = Math.min((exit - x) * u.side, u.speed * fold.speed * remaining);
-      distance += d; remaining -= d / (u.speed * fold.speed);
+      const d = Math.min((exit - x) * u.side, speed * fold.speed * remaining);
+      distance += d; remaining -= d / (speed * fold.speed);
     }
-    return distance + u.speed * remaining;
+    return distance + speed * remaining;
   }
   damageUnit(u, amount) {
     const multiplier = u.bossBehavior === 'guard'
       ? u.bossPhase === 'guard' ? 0.35 : u.bossPhase === 'recovery' ? 1.5 : 1
       : 1;
-    const damage = amount * multiplier;
+    const protection = u.shieldAvailable ? 1 - u.firstGuard : 1;
+    if (amount > 0) u.shieldAvailable = false;
+    const damage = amount * multiplier * protection;
     u.hp -= damage;
     return damage;
   }
@@ -311,14 +331,14 @@ export class Battle {
     if (!u.bossPhase) {
       if (u.timer > 0 || (!target && !baseInRange)) return false;
       u.bossPhase = 'windup'; u.phaseTime = 1.4;
-      this.onEvent({ type: 'bossWindup', id: u.id, glyph: u.glyph });
+      this.onEvent({ type: 'bossWindup', id: u.id, glyph: u.glyph, behavior: u.bossBehavior });
       return true;
     }
     u.phaseTime -= dt;
     if (u.phaseTime > 0) return true;
     if (u.bossPhase === 'guard') {
       u.bossPhase = 'windup'; u.phaseTime = 1;
-      this.onEvent({ type: 'bossWindup', id: u.id, glyph: u.glyph });
+      this.onEvent({ type: 'bossWindup', id: u.id, glyph: u.glyph, behavior: u.bossBehavior });
     } else if (u.bossPhase === 'windup') {
       u.action = 0.38;
       if (u.bossBehavior === 'sweep') {
@@ -333,11 +353,12 @@ export class Battle {
       }
       u.bossPhase = 'recovery';
       u.phaseTime = u.bossBehavior === 'guard' ? 3 : 2.2;
-      this.onEvent({ type: 'bossRecovery', id: u.id, glyph: u.glyph });
+      this.onEvent({ type: 'bossRecovery', id: u.id, glyph: u.glyph, behavior: u.bossBehavior });
     } else if (u.bossPhase === 'recovery') {
       u.bossPhase = u.bossBehavior === 'guard' ? 'guard' : null;
       u.phaseTime = u.bossBehavior === 'guard' ? 2.4 : 0;
       u.timer = 0.2;
+      this.advanceFinale(u);
     }
     return true;
   }
@@ -349,14 +370,14 @@ export class Battle {
       dealt = this.damageUnit(target, amount);
       targetIds.push(target.id);
       if (u.side === 1 && u.kind === 0) {
-        for (const v of foes) if (v !== target && Math.abs(v.x - target.x) < 80) {
+        for (const v of foes) if (v !== target && Math.abs(v.x - target.x) < u.splash) {
           this.damageUnit(v, amount * 0.65);
           targetIds.push(v.id);
         }
       }
-      if (u.side === 1 && u.kind === 3) target.x = Math.min(1055, target.x + 24);
+      if (u.side === 1 && u.kind === 3) target.x = Math.min(1055, target.x + u.knockback);
     } else if (u.side === 1) this.enemyHp = Math.max(0, this.enemyHp - amount);
-    else this.homeHp = Math.max(0, this.homeHp - amount);
+    else { this.homeHp = Math.max(0, this.homeHp - amount); this.lastThreat = u.glyph; }
     this.onEvent({ type: 'hit', from: u.x, x, amount: Math.round(dealt),
       kind: u.kind, side: u.side, attackerId: u.id, targetIds });
   }
@@ -364,7 +385,7 @@ export class Battle {
     if (!u.bossPhase) {
       if (u.timer > 0 || (!target && !baseInRange)) return false;
       u.bossPhase = 'windup'; u.phaseTime = 1.2; u.strikes = 0;
-      this.onEvent({ type: 'bossWindup', id: u.id, glyph: u.glyph });
+      this.onEvent({ type: 'bossWindup', id: u.id, glyph: u.glyph, behavior: u.bossBehavior });
       return true;
     }
     u.phaseTime -= dt;
@@ -372,6 +393,7 @@ export class Battle {
     if (u.bossPhase === 'recovery') {
       u.bossPhase = null;
       u.timer = 0.2;
+      this.advanceFinale(u);
       return true;
     }
     u.bossPhase = 'volley';
@@ -380,9 +402,24 @@ export class Battle {
     if (target || baseInRange) this.attackTarget(u, target, foes, target ? target.x : 130, 0.6);
     if (u.strikes === 3) {
       u.bossPhase = 'recovery'; u.phaseTime = 2.5;
-      this.onEvent({ type: 'bossRecovery', id: u.id, glyph: u.glyph });
+      this.onEvent({ type: 'bossRecovery', id: u.id, glyph: u.glyph, behavior: u.bossBehavior });
     } else u.phaseTime += 0.28;
     return true;
+  }
+  advanceFinale(u) {
+    if (!u.finale || u.hp > u.maxHp * 0.5) return;
+    u.bossBehavior = ['sweep', 'guard', 'triple'][u.finaleStep++ % 3];
+    u.range = { sweep: 155, guard: 125, triple: 200 }[u.bossBehavior];
+    u.bossPhase = u.bossBehavior === 'guard' ? 'guard' : null;
+    u.phaseTime = u.bossBehavior === 'guard' ? 2.4 : 0;
+    this.onEvent({ type: 'bossChange', behavior: u.bossBehavior });
+  }
+  addComma(writer) {
+    if (this.units.filter(u => u.obstacle && u.hp > 0).length >= 5) return;
+    this.units.push({ id: this.nextId++, glyph: '、', kind: -1, side: -1, obstacle: true,
+      x: Math.max(170, writer.x - 100), hp: 80, maxHp: 80, ttl: 8,
+      attack: 0, speed: 0, range: 0, timer: 0, action: 0, stride: 0, age: 0, moving: false });
+    this.onEvent({ type: 'punctuation' });
   }
   update(dt) {
     if (this.status !== "playing") return;
@@ -393,19 +430,33 @@ export class Battle {
     const next = this.config.wavePlan[this.wave];
     if (next && this.time >= next.at) {
       this.wave++;
-      next.enemies.forEach((kind, i) => this.queue.push({ at: next.at + i * next.spacing, kind }));
+      next.enemies.forEach((kind, i) => this.queue.push({ at: next.at + i * next.spacing, kind, writing: i % 2 === 0 }));
       if (this.wave === this.config.waves && !this.bossSpawned) this.spawnBoss();
       this.onEvent({ type: "wave", wave: this.wave, label: next.label });
     }
     this.queue = this.queue.filter((s) => {
       if (this.time >= s.at) {
-        this.addUnit(s.kind, -1);
+        const u = this.addUnit(s.kind, -1);
+        if (this.config.writing && s.writing) {
+          u.writingLeft = u.writingDuration = this.config.writing.duration;
+          u.x = this.config.writing.x;
+        }
         return false;
       }
       return true;
     });
     for (const u of this.units) {
       if (u.hp <= 0) continue;
+      u.age += dt;
+      if (u.obstacle) { u.ttl -= dt; if (u.ttl <= 0) u.hp = 0; continue; }
+      if (u.writingLeft > 0) {
+        u.writingLeft = Math.max(0, u.writingLeft - dt);
+        continue;
+      }
+      if (this.config.punctuation && u.side === -1 && u.kind === 7) {
+        u.punctuationTimer -= dt;
+        if (u.punctuationTimer <= 0) { this.addComma(u); u.punctuationTimer = 7; }
+      }
       u.timer -= dt;
       u.action = Math.max(0, u.action - dt);
       u.moving = false;
@@ -439,8 +490,8 @@ export class Battle {
 
 export function bossStatus(u) {
   if (!u?.bossPhase) return '';
-  if (u.bossPhase === 'guard') return '輪の守り · 65%軽減';
-  if (u.bossPhase === 'recovery') return u.bossBehavior === 'guard' ? '輪がゆるむ · 被ダメージ1.5倍' : 'ひとやすみ · 攻める好機';
+  if (u.bossPhase === 'guard') return `${u.finale ? '斜線' : '輪'}の守り · 65%軽減`;
+  if (u.bossPhase === 'recovery') return u.bossBehavior === 'guard' ? `${u.finale ? '斜線' : '輪'}がゆるむ · 被ダメージ1.5倍` : 'ひとやすみ · 攻める好機';
   if (u.bossPhase === 'volley') return '三連撃';
   return u.bossBehavior === 'triple' ? '三連撃の構え'
     : u.bossBehavior === 'sweep' ? '払いの構え · 前衛を補充' : '突きの構え';

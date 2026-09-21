@@ -42,7 +42,7 @@ try {
   await page.locator("#start").click();
   await page.locator("#book").click();
   assert.ok(await page.locator("#dialog").isVisible());
-  assert.equal(await page.locator(".dex").count(), 12);
+  assert.equal(await page.locator(".dex").count(), 14);
   await page.keyboard.press("Escape");
   assert.ok(await page.locator("#overlay").isVisible());
   await page.locator("#start").click();
@@ -91,12 +91,12 @@ try {
   await page.evaluate(() => localStorage.setItem('mojimoji-progress', '[0,1,2]'));
   await page.reload();
   await page.locator('#stages').click();
-  assert.equal(await page.locator('.chapter-heading').count(), 2);
-  assert.equal(await page.locator('[data-stage]').count(), 6);
+  assert.equal(await page.locator('.chapter-heading').count(), 4);
+  assert.equal(await page.locator('[data-stage]').count(), 12);
   assert.ok(await page.locator('[data-stage="3"]').isEnabled());
   assert.ok(await page.locator('[data-stage="4"]').isDisabled());
   await page.keyboard.press('Escape');
-  for (let stage = 0; stage < 6; stage++) {
+  for (let stage = 0; stage < 12; stage++) {
     await page.locator('#start').click();
     await page.evaluate(() => {
       const b = window.testBattle.battle;
@@ -132,12 +132,12 @@ try {
       await page.keyboard.press('Escape');
       await page.setViewportSize({ width: 1440, height: 1050 });
     }
-    if (stage < 5) {
+    if (stage < 11) {
       await page.locator('#next').click();
       const glyph = await page.evaluate(kind => window.testBattle.battle.heroes[kind].glyph, kind);
-      if (stage === 2) {
+      if (stage % 3 === 2) {
         assert.deepEqual(await page.evaluate(() => window.testBattle.battle.heroes.map(h => h.rank)), [0, 0, 0, 0, 0]);
-        assert.match(await page.locator('#chapter-name').innerText(), /第2章/);
+        assert.match(await page.locator('#chapter-name').innerText(), new RegExp(`第${Math.floor((stage + 1) / 3) + 1}章`));
         await page.screenshot({ path: 'test-results/chapter-two.png', fullPage: true });
       } else {
         assert.ok(expected.endsWith(`${glyph}に強化`));
@@ -146,6 +146,8 @@ try {
     } else {
       await page.locator('#start').click();
       assert.equal(await page.locator('.final-letters .letter').count(), 5);
+      assert.match(await page.locator('#dialog-body').innerText(), /最後の一文字まで/);
+      await page.screenshot({ path: 'test-results/ending.png', fullPage: true });
       await page.keyboard.press('Escape');
     }
   }
@@ -183,7 +185,7 @@ try {
   await page.evaluate(() => {
     const { battle: b, renderer: r } = window.testBattle;
     b.wave = b.config.waves; b.units = []; b.queue = []; r.effects = [];
-    b.spawnBoss(); const boss = b.units[0]; boss.x = 760; boss.timer = 0;
+    b.spawnBoss(); const boss = b.units[0]; boss.x = 760; boss.timer = 0; boss.age = 1;
     const hero = b.addUnit(4, 1); hero.x = 580; hero.speed = 0;
     b.update(1 / 60); b.status = 'paused';
   });
@@ -206,7 +208,7 @@ try {
     const { battle: b, renderer: r } = window.testBattle;
     b.units = []; r.effects = [];
     for (let kind = 0; kind < 5; kind++) {
-      const u = b.addUnit(kind, 1); u.x = 270 + kind * 155; u.action = 0.28;
+      const u = b.addUnit(kind, 1); u.x = 270 + kind * 155; u.action = 0.28; u.age = 1;
     }
   });
   await page.waitForTimeout(100);
@@ -254,7 +256,7 @@ try {
     await page.evaluate(() => {
       const { battle: b, renderer: r } = window.testBattle;
       b.wave = b.config.waves; b.units = []; b.queue = []; r.effects = [];
-      b.spawnBoss(); const boss = b.units[0]; boss.x = 760; boss.timer = 0;
+      b.spawnBoss(); const boss = b.units[0]; boss.x = 760; boss.timer = 0; boss.age = 1;
       const hero = b.addUnit(4, 1); hero.x = 650; hero.speed = 0; hero.timer = 100;
       const rear = b.addUnit(2, 1); rear.x = 500; rear.speed = 0; rear.timer = 100;
       b.update(1 / 60); b.status = 'paused';
@@ -290,10 +292,57 @@ try {
   await page.locator('[data-stage="3"]').click();
   assert.equal(await page.locator('.field').evaluate(el => el.getAnimations().length), 0);
   assert.match(await page.locator('#chapter-name').innerText(), /第2章/);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.locator('#stages').click(); await page.locator('[data-stage="8"]').click();
+  await page.locator('#start').click();
+  await page.evaluate(() => {
+    const b = window.testBattle.battle; b.update(0.01);
+    b.wave = b.config.waves; b.units = []; b.queue = []; b.status = 'paused';
+    const ghost = b.addUnit(0, -1); ghost.x = 780; ghost.writingDuration = 4; ghost.writingLeft = 2.5;
+    const h = b.addUnit(7, -1); h.x = 900; h.age = 1; b.addComma(h); b.units.at(-1).age = 1;
+    const a = b.addUnit(0, 1); a.x = 650; a.age = 1;
+  });
+  await page.waitForTimeout(100);
+  await page.screenshot({ path: 'test-results/writing-and-comma.png', fullPage: true });
+  const writingFrame = await page.locator('#battle').evaluate(c => c.toDataURL());
+  await page.evaluate(() => window.testBattle.battle.units[0].writingLeft = 1.5);
+  await page.waitForTimeout(100);
+  assert.notEqual(await page.locator('#battle').evaluate(c => c.toDataURL()), writingFrame);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: 'test-results/writing-mobile.png', fullPage: true });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.locator('#about').click();
+  assert.match(await page.locator('#dialog-body').innerText(), /全4章・12ページ/);
+  await page.keyboard.press('Escape');
+  // 最終ボスの後半も画面に反映し、音なしで行動を読める。
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.locator('#stages').click(); await page.locator('[data-stage="11"]').click();
+  await page.locator('#start').click();
+  await page.evaluate(() => {
+    const b = window.testBattle.battle; b.units = []; b.wave = b.config.waves;
+    b.spawnBoss(); const z = b.units[0]; z.x = 760; z.age = 1;
+    z.hp = z.maxHp * 0.49; b.advanceFinale(z);
+    const hero = b.addUnit(4, 1); hero.x = 650; hero.age = 1;
+    z.timer = 0; b.update(1 / 60); b.status = 'paused';
+  });
+  await page.waitForTimeout(150);
+  assert.match(await page.locator('#battle-hint').innerText(), /Z：払いの構え/);
+  await page.screenshot({ path: 'test-results/final-boss.png', fullPage: true });
+  await page.addInitScript(() => Object.defineProperty(window, 'localStorage', { get() { throw new Error('Storage unavailable'); } }));
+  await page.reload(); await page.locator('#start').click();
+  await page.evaluate(() => {
+    const b = window.testBattle.battle; b.spawnBoss(); b.units[0].hp = 0; b.enemyHp = 0; b.resolve();
+  });
+  assert.equal(await page.locator('[data-evolve]').count(), 3);
+  assert.match(await page.locator('#announcement').innerText(), /保存できません/);
   assert.deepEqual(errors, []);
   console.log(
-    "ブラウザー検証成功：出撃、停止、図鑑、速度、音声、解放制限、モバイル表示、ウェーブ予告、折り目、E・F・Gの専用行動、全6ページ攻略、章内育成と章間リセット、旧記録互換、攻撃演出、動きを減らす設定、実行時エラーなし",
+    "ブラウザー検証成功：出撃、停止、図鑑、速度、音声、解放制限、モバイル表示、ウェーブ予告、折り目、E・F・Gの専用行動、全12ページ攻略とエンディング、章内育成と章間リセット、旧記録互換、書きかけと読点、最終ボス、攻撃演出、動きを減らす設定、実行時エラーなし",
   );
+} catch (error) {
+  const page = browser?.contexts()[0]?.pages()[0];
+  if (page && !page.isClosed()) await page.screenshot({ path: 'test-results/failure.png', fullPage: true }).catch(() => {});
+  throw error;
 } finally {
   await browser?.close();
   await server.close();

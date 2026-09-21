@@ -307,9 +307,9 @@ test('ボスEの三連撃は拠点にも適用され、通常のEは予告行動
 // 第2章も初期編成から攻略でき、章をまたいだ育成の持ち込みを前提にしない。
 test('章内は育成を引き継ぎ、章末と最終ページではリセットする', async () => {
   const { CHAPTERS, isChapterEnd, nextLoadout } = await import('../src/stages.js');
-  assert.equal(CHAPTERS.length, 2);
-  assert.equal(STAGES.length, 6);
-  assert.deepEqual(STAGES.map(s => s.chapter), [0, 0, 0, 1, 1, 1]);
+  assert.equal(CHAPTERS.length, 4);
+  assert.equal(STAGES.length, 12);
+  assert.deepEqual(STAGES.map(s => s.chapter), [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3]);
   const ranks = [1, 1, 0, 0, 1];
   assert.deepEqual(nextLoadout(1, ranks), ranks);
   assert.notEqual(nextLoadout(1, ranks), ranks);
@@ -406,4 +406,108 @@ test('通常のF・Gにはボスの押し戻しや防御が付かない', () => 
   b.update(1 / 60);
   assert.equal(hero.x, 560); assert.equal(f.bossPhase, null); assert.equal(g.bossPhase, null);
   const hp = g.hp; b.damageUnit(g, 100); assert.equal(g.hp, hp - 100);
+});
+
+
+test('12ページの編成・ボス・章境界に未定義の文字がない', async () => {
+  const { ENEMIES } = await import('../src/game.js');
+  const { LETTERS } = await import('../src/letters.js');
+  for (const s of STAGES) {
+    assert.ok(LETTERS[ENEMIES[s.boss.kind].glyph]);
+    assert.ok(s.wavePlan.every((w, i) => w.at >= 0 && w.spacing > 0 && (!i || w.at > s.wavePlan[i - 1].at)));
+    for (const w of s.wavePlan) for (const k of w.enemies) assert.ok(LETTERS[ENEMIES[k]?.glyph]);
+  }
+});
+
+test('書きかけは完成まで移動・攻撃せず、完成前にも倒せる', () => {
+  const b = new Battle(6); b.start(); run(b, 3.1);
+  const enemy = b.units[0]; assert.ok(enemy.writingLeft > 3.8);
+  const x = enemy.x;
+  const hero = b.addUnit(4, 1); hero.x = x - 20; hero.speed = 0; hero.timer = 100;
+  run(b, 3.5);
+  assert.equal(enemy.x, x); assert.equal(hero.hp, hero.maxHp);
+  b.status = 'paused'; const left = enemy.writingLeft; run(b, 8);
+  assert.equal(enemy.writingLeft, left);
+  b.status = 'playing'; b.skill = 30; b.cast();
+  assert.ok(!b.units.includes(enemy)); assert.ok(b.kills >= 1);
+});
+
+test('書きかけは時間経過で通常の敵として動き出す', () => {
+  const b = new Battle(6); b.start(); run(b, 3.1);
+  const enemy = b.units[0], x = enemy.x;
+  run(b, 4.1);
+  assert.equal(enemy.writingLeft, 0); assert.ok(enemy.x < x);
+});
+
+test('Hの読点は攻撃対象となり、8秒で消えるが撃破報酬を出さない', () => {
+  const b = new Battle(7); b.start(); b.wave = b.config.waves;
+  const h = b.addUnit(7, -1); h.speed = 0; h.x = 600;
+  run(b, 3.1);
+  const comma = b.units.find(u => u.obstacle);
+  assert.ok(comma); assert.equal(comma.glyph, '、'); assert.equal(comma.x, 500);
+  const hero = b.addUnit(0, 1); hero.x = 450; hero.timer = 0;
+  b.update(1 / 60); assert.ok(comma.hp < 80);
+  hero.timer = 100; hero.speed = 0; h.punctuationTimer = 100;
+  const kills = b.kills;
+  b.status = 'paused'; const ttl = comma.ttl; run(b, 9); assert.equal(comma.ttl, ttl);
+  b.status = 'playing'; run(b, 8.1);
+  assert.ok(!b.units.includes(comma)); assert.equal(b.kills, kills);
+});
+
+test('読点は5個まで、消しゴムで消せて鉛筆の稼ぎにはならない', () => {
+  const b = new Battle(7); b.start(); const h = b.addUnit(7, -1);
+  for (let i = 0; i < 10; i++) b.addComma(h);
+  assert.equal(b.units.filter(u => u.obstacle).length, 5);
+  b.units = b.units.filter(u => u.obstacle);
+  const ink = b.ink; b.skill = 30; b.cast();
+  assert.equal(b.units.length, 0); assert.equal(b.kills, 0); assert.equal(b.ink, ink);
+});
+
+test('育成した範囲攻撃と押し戻しは初期編成より届く', () => {
+  for (const rank of [0, 1]) {
+    const b = new Battle(0, () => {}, [rank, 0, 0, rank, 0]); b.start();
+    const hero = b.addUnit(0, 1), first = b.addUnit(3, -1), second = b.addUnit(3, -1);
+    hero.x = 450; first.x = 500; second.x = 590;
+    b.attackTarget(hero, first, [first, second], first.x);
+    assert.equal(second.hp < second.maxHp, Boolean(rank));
+    const cross = b.addUnit(3, 1); first.x = 500;
+    b.attackTarget(cross, first, [first], first.x);
+    assert.equal(first.x, 524 + rank * 8);
+  }
+});
+
+test('速攻の強化は出撃後4秒のみ、遠距離の強化は射程に反映する', () => {
+  const b = new Battle(0, () => {}, [0, 2, 2, 0, 0]);
+  const fast = b.addUnit(1, 1); fast.age = 1;
+  assert.equal(b.moveDistance(fast, 1), fast.speed * 1.3);
+  fast.age = 4; assert.equal(b.moveDistance(fast, 1), fast.speed);
+  const ranged = b.addUnit(2, 1); assert.equal(ranged.range, HEROES[2].range + 24);
+});
+
+test('守りの強化は最初の被弾だけを軽減し、再召喚で復活する', () => {
+  const b = new Battle(0, () => {}, [0, 0, 0, 0, 2]);
+  const defender = b.addUnit(4, 1);
+  assert.equal(b.damageUnit(defender, 100), 70);
+  assert.equal(b.damageUnit(defender, 100), 100);
+  assert.equal(b.damageUnit(b.addUnit(4, 1), 100), 70);
+});
+
+test('Zは半分以下でも予兆を打ち切らず、休止後に払い・守り・三連撃へ切り替わる', () => {
+  const { b, boss, hero } = specialEncounter(11);
+  assert.ok(boss.finale); assert.equal(boss.glyph, 'Z');
+  assert.equal(boss.bossBehavior, 'triple');
+  boss.hp = boss.maxHp * 0.49; hero.hp = hero.maxHp = 1e6;
+  run(b, 1); assert.equal(boss.bossBehavior, 'triple');
+  run(b, 3.5); assert.equal(boss.bossBehavior, 'sweep');
+  hero.x = boss.x - 100;
+  run(b, 4); assert.equal(boss.bossBehavior, 'guard');
+  hero.x = boss.x - 100;
+  run(b, 6.8); assert.equal(boss.bossBehavior, 'triple');
+});
+
+test('最終ボスZを倒しても拠点が残れば終了せず、勝利通知は一回だけ', () => {
+  const events = [], b = new Battle(11, e => events.push(e)); b.start();
+  b.spawnBoss(); b.units[0].hp = 0; b.resolve(); assert.equal(b.status, 'playing');
+  b.enemyHp = 0; b.resolve(); b.resolve();
+  assert.equal(b.status, 'won'); assert.equal(events.filter(e => e.type === 'won').length, 1);
 });

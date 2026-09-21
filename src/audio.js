@@ -2,41 +2,51 @@ export class Sound {
   constructor() {
     this.enabled = false;
     this.ctx = null;
+    this.lastHit = -1;
   }
   toggle() {
-    this.enabled = !this.enabled;
-    if (this.enabled) {
-      this.ctx ??= new (window.AudioContext || window.webkitAudioContext)();
-      this.ctx.resume();
-      this.play("summon");
+    if (!this.ctx) {
+      const Audio = window.AudioContext || window.webkitAudioContext;
+      if (!Audio) return false;
+      this.ctx = new Audio();
+      this.noise = this.ctx.createBuffer(1, this.ctx.sampleRate / 2, this.ctx.sampleRate);
+      const data = this.noise.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
     }
+    this.enabled = !this.enabled;
+    if (this.enabled) { this.ctx.resume(); this.play('summon'); }
     return this.enabled;
   }
+  tone(frequency, delay = 0, duration = 0.18) {
+    const c = this.ctx, o = c.createOscillator(), g = c.createGain(), at = c.currentTime + delay;
+    o.type = 'sine'; o.frequency.setValueAtTime(frequency, at);
+    g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(0.025, at + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, at + duration);
+    o.connect(g).connect(c.destination); o.start(at); o.stop(at + duration);
+    o.onended = () => { o.disconnect(); g.disconnect(); };
+  }
   play(type) {
-    if (!this.enabled || !this.ctx || this.ctx.state !== "running") return;
+    if (!this.enabled || !this.ctx || this.ctx.state !== 'running') return;
+    const c = this.ctx;
+    if (['hit', 'summon', 'skill', 'page'].includes(type)) {
+      if (type === 'hit' && c.currentTime - this.lastHit < 0.05) return;
+      if (type === 'hit') this.lastHit = c.currentTime;
+      const n = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+      const duration = type === 'skill' ? 0.4 : type === 'page' ? 0.2 : 0.09;
+      n.buffer = this.noise; f.type = 'bandpass';
+      f.frequency.value = type === 'skill' ? 650 : type === 'page' ? 450 : 1600;
+      f.Q.value = 0.7;
+      g.gain.setValueAtTime(type === 'hit' ? 0.035 : 0.08, c.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + duration);
+      n.connect(f).connect(g).connect(c.destination); n.start(); n.stop(c.currentTime + duration);
+      n.onended = () => { n.disconnect(); f.disconnect(); g.disconnect(); };
+      return;
+    }
     const notes = {
-      summon: 660,
-      hit: 220,
-      upgrade: 880,
-      skill: 110,
-      won: 1046,
-      lost: 140,
-      wave: 330,
-    };
-    if (!notes[type]) return;
-    const c = this.ctx,
-      o = c.createOscillator(),
-      g = c.createGain();
-    o.type = type === "hit" ? "triangle" : "sine";
-    o.frequency.setValueAtTime(notes[type], c.currentTime);
-    o.frequency.exponentialRampToValueAtTime(
-      notes[type] * (type === "skill" ? 3 : 0.7),
-      c.currentTime + 0.13,
-    );
-    g.gain.setValueAtTime(0.035, c.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.16);
-    o.connect(g).connect(c.destination);
-    o.start();
-    o.stop(c.currentTime + 0.17);
+      upgrade: [660, 880], wave: [330], boss: [220, 165], bossWindup: [196],
+      bossRecovery: [440], bossChange: [196, 262], won: [523, 659, 784],
+      lost: [262, 196], ending: [523, 659, 784, 1046, 784, 659, 523],
+    }[type];
+    notes?.forEach((frequency, i) => this.tone(frequency, i * 0.15, type === 'ending' ? 0.45 : 0.18));
   }
 }

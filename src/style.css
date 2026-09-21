@@ -184,3 +184,19 @@ dialog li { margin: 12px 0; }
   .overlay:has(.chapter-letters) .overlay-actions { gap: 3px 8px; }
   .overlay:has(.chapter-letters) .primary { padding: 0 12px; }
 }
+
+.field[data-chapter="1"] .scene { filter: brightness(.98) sepia(.05); }
+.field[data-chapter="2"] .scene { filter: brightness(.96) sepia(.1); }
+.field[data-chapter="3"] .scene { filter: brightness(.93) sepia(.14); }
+footer { gap: 10px; flex-wrap: wrap; align-items: center; }
+footer button { font-size: inherit; padding: 0; min-height: 28px; }
+.growth-perk { max-width: 125px; font-size: 10px; line-height: 1.5; }
+.grown-details { display: grid; grid-template-columns: 1fr 1fr; gap: 0 15px; }
+.grown-details p { font-size: 11px; }
+.ending-kicker { letter-spacing: .12em; }
+@media (max-width: 540px) {
+  .evolution-choices button { flex: 1; min-width: 0; padding: 5px; }
+  .growth-perk { font-size: 9px !important; }
+  .overlay:has(.evolution-choices) { bottom: 2%; }
+  .battle-notes { overflow-wrap: anywhere; }
+}
