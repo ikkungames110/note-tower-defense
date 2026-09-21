@@ -24,7 +24,7 @@ app.innerHTML = `<main>
 </div>
 <div class="command-area">
 <div class="chapter-caption" id="chapter-name"></div>
-<div class="battle-notes"><span id="battle-hint"></span><span id="wave-preview"></span></div>
+<div class="battle-notes"><span id="battle-status"></span><span id="wave-preview"></span></div>
 <div class="resource-row"><div class="ink"><span>鉛筆</span><strong id="ink-value"></strong><div class="meter"><i id="ink-fill"></i></div><span id="income"></span></div><div class="resource-actions"><button id="upgrade">ためる力 <span id="upgrade-cost"></span><kbd>U</kbd></button><button id="skill">消しゴム <span id="skill-charge"></span><kbd>Q</kbd></button></div></div>
 <div class="cards">${HEROES.map((h, i) => `<button class="unit-card" data-unit="${i}" aria-label="${h.glyph}を召喚 ${h.cost}鉛筆" title="${h.role}：${h.description}"><kbd>${i + 1}</kbd><span class="glyph">${letterSvg(h.glyph)}</span><span class="card-detail"><span class="role">${h.role}</span><span class="card-bottom">${h.cost}<span class="card-state"></span></span></span><span class="cooldown"></span></button>`).join("")}</div>
 </div></section>
@@ -58,10 +58,9 @@ function newBattle(stage = 0, loadout = [0, 0, 0, 0, 0]) {
     renderer.event(e);
     sound.play(e.type);
     if (e.type === "boss") notify(`ボス ${e.glyph} が登場`);
-    if (e.type === "wave") notify(`第 ${e.wave} 波 · ${e.label}`);
+    if (e.type === 'reinforcements') notify('敵の増援');
+    if (e.type === "wave") notify(`第 ${e.wave} 波`);
     if (e.type === "bossChange") notify(`Zの構えが変わった · ${{ sweep: "前方を払う", guard: "斜線の守り", triple: "三連撃" }[e.behavior]}`);
-    if (e.type === "bossWindup") notify(`${e.glyph}が構えた。${e.behavior === "sweep" ? "前衛を補充しよう" : e.behavior === "guard" ? "突きに備えよう" : "三連撃に備えよう"}`);
-    if (e.type === "bossRecovery") notify(`${e.glyph}がひとやすみ。${e.behavior === "guard" ? "ダメージ1.5倍の好機！" : "攻める好機！"}`);
     if (e.type === "won") {
       choices = upgradeChoices(ranks);
       if (!cleared.includes(battle.stage)) {
@@ -109,10 +108,10 @@ function showOverlay() {
     lost: "もう一度、書きなおそう。",
   };
   const descriptions = {
-    ready: battle.config.tip,
+    ready: "",
     paused: "",
     won: `${Math.floor(battle.time)} 秒 · ${battle.kills}体撃破 · ${cleared.length} / ${STAGES.length} ページ`,
-    lost: `${battle.lastThreat || "敵"}に拠点を突破されました。「お」で守って「う」で援護しよう。`,
+    lost: `${battle.lastThreat || "敵"}に拠点を突破されました。`,
   };
   if (state === 'won' && !rewardChosen) {
     o.innerHTML = `<h2>次の一文字を、書こう。</h2><p>1つ選んで強化。HP・攻撃力が初期値の8%分アップ。得意技も育ちます。<br>次の章では初期編成に戻ります。</p><div class="evolution-choices">${choices.map(c => `<button data-evolve="${c.kind}" aria-label="${c.from}から${c.glyph}に強化"><span>${letterSvg(c.from)} → ${letterSvg(c.glyph)}</span><small>${HEROES[c.kind].role}</small><small class="growth-perk">${growthDescription(c.kind, c.rank)}</small></button>`).join('')}</div>`;
@@ -168,16 +167,15 @@ function updateUI() {
   $("#wave").textContent = `第 ${battle.wave} 波 / ${battle.config.waves}`;
   const boss = battle.units.find(u => u.boss && u.hp > 0);
   const status = bossStatus(boss);
-  $("#battle-hint").textContent = status ? `${boss.glyph}：${status}`
-    : battle.stage === 0 && battle.time < 8 ? '下のカードを押して召喚 · 文字は自動で戦います'
-    : [battle.config.fold ? '折り目：移動速度 ½' : '', battle.config.writing ? '書きかけは完成前に倒せる' : '', battle.config.punctuation ? '読点は「あ」でまとめて除去' : ''].filter(Boolean).join(' · ') || '群れには「あ」 · 遠くには「う」';
+  $("#battle-status").textContent = status ? `${boss.glyph}：${status}`
+    : [battle.config.fold ? '折り目：移動速度 ½' : '', battle.config.writing ? '筆記中：4秒' : '', battle.config.punctuation ? '読点：8秒' : ''].filter(Boolean).join(' · ');
   const next = battle.nextWave;
   const enemies = next ? [...new Set(next.enemies)].map(kind => ENEMIES[kind].glyph).join('・') : '';
-  $("#wave-preview").textContent = battle.status === 'won' ? 'ページクリア · 育った文字を確認しよう'
-    : battle.status === 'lost' ? '再挑戦で編成と召喚のタイミングを見直そう'
+  $("#wave-preview").textContent = battle.status === 'won' ? 'ページクリア'
+    : battle.status === 'lost' ? '戦闘終了'
     : next
-    ? `次の波まで ${Math.max(0, Math.ceil(next.at - battle.time))}秒 · ${enemies}${battle.wave === battle.config.waves - 1 && !battle.bossSpawned ? ' ＋ ボス' : ''}`
-    : '最後の波 · 拠点とボスを倒そう';
+    ? `${next.reinforcement ? '増援まで' : '次の波まで'} ${Math.max(0, Math.ceil(next.at - battle.time))}秒 · ${enemies}${battle.wave === battle.config.waves - 1 && !battle.bossSpawned ? ' ＋ ボス' : ''}`
+    : '最後の波';
   $("#pause").textContent = playing ? "Ⅱ" : "▷";
   $("#pause").setAttribute("aria-label", playing ? "一時停止" : "開始・再開");
   $("#pause").disabled = ["won", "lost"].includes(battle.status);
@@ -224,7 +222,7 @@ dialog.addEventListener("click", (e) => {
 });
 $("#guide").onclick = () =>
   openDialog(
-    `<h2>あそびかた</h2><p>左を守って、右の陣地をなくせば勝ち。<br>文字は、自分で進んで戦います。</p><ol><li>鉛筆で文字を呼ぶ。<kbd>1–5</kbd></li><li>「ためる力」で鉛筆の回復と上限を増やす。<kbd>U</kbd></li><li>30秒たまった「消しゴム」で敵を押し戻す。<kbd>Q</kbd></li></ol><p><kbd>Space</kbd> 開始・ひとやすみ ／ ×1・×2で速度変更</p><p>各ページには大きなボスがいます。拠点を削り、ボスを倒すとクリア。3択から文字を1つ強化し、次のページへ引き継ぎます。</p><p>次の波の文字と残り秒数を見て、召喚に備えましょう。折り目のあるページでは、敵も味方も移動速度が半分になります。射程と攻撃速度は変わりません。</p><p>ボスEは1.2秒構えてから三連撃。その後2.5秒は攻撃も移動もしません。消しゴムで射程外へ押し戻すと、その一撃を避けられます。</p><p>Fは1.4秒の構えから前方をまとめて払い、味方を押し戻します。Gは防御中にダメージ65%減、突きの後の3秒間は1.5倍のダメージを受けます。消しゴムも同じ倍率です。</p><p>全4章・12ページ。育成は同じ章の3ページで引き継ぎます。次の章では「あいうえお」から始めます。章の最後にも強化を選び、育った文字を確認できます。</p><p>第3章から薄い書きかけの敵が登場。4秒で完成するまで動きませんが、攻撃で倒せます。Hが置く読点は攻撃か消しゴムで除去でき、8秒で消えます。最終ボスZはHPが半分になると、休止後に払い・守り・三連撃へと構えを変えます。</p><p>強化はHP・攻撃力だけでなく、範囲・出撃直後の速さ・射程・押し戻し・最初の一撃への耐性も伸ばします。</p><p>再挑戦はそのページ開始時の強化に戻ります。ページ選択・再読み込みで文字の強化はリセット。クリアしたページだけ、このブラウザーに記録します。</p>`,
+    `<h2>あそびかた</h2><p>左を守って、右の陣地をなくせば勝ち。<br>文字は、自分で進んで戦います。</p><ol><li>鉛筆で文字を呼ぶ。<kbd>1–5</kbd></li><li>「ためる力」で鉛筆の回復と上限を増やす。<kbd>U</kbd></li><li>30秒たまった「消しゴム」で敵を押し戻す。<kbd>Q</kbd></li></ol><p><kbd>Space</kbd> 開始・ひとやすみ ／ ×1・×2で速度変更</p><p>各ページには大きなボスがいます。拠点を削り、ボスを倒すとクリア。3択から文字を1つ強化し、次のページへ引き継ぎます。</p><p>次の波には出現する文字と残り秒数が表示されます。折り目のあるページでは、敵も味方も移動速度が半分になります。射程と攻撃速度は変わりません。</p><p>ボスEは1.2秒構えてから三連撃。その後2.5秒は攻撃も移動もしません。消しゴムで射程外へ押し戻すと、その一撃を避けられます。</p><p>Fは1.4秒の構えから前方をまとめて払い、味方を押し戻します。Gは防御中にダメージ65%減、突きの後の3秒間は1.5倍のダメージを受けます。消しゴムも同じ倍率です。</p><p>全4章・12ページ。育成は同じ章の3ページで引き継ぎます。次の章では「あいうえお」から始めます。章の最後にも強化を選び、育った文字を確認できます。</p><p>第3章から薄い書きかけの敵が登場。4秒で完成するまで動きませんが、攻撃で倒せます。Hが置く読点は攻撃か消しゴムで除去でき、8秒で消えます。最終ボスZはHPが半分になると、休止後に払い・守り・三連撃へと構えを変えます。</p><p>強化はHP・攻撃力だけでなく、範囲・出撃直後の速さ・射程・押し戻し・最初の一撃への耐性も伸ばします。</p><p>再挑戦はそのページ開始時の強化に戻ります。ページ選択・再読み込みで文字の強化はリセット。クリアしたページだけ、このブラウザーに記録します。</p>`,
   );
 $("#book").onclick = () =>
   openDialog(

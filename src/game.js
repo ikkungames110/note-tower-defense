@@ -1,81 +1,21 @@
 import { STAGES } from './stages.js';
 export { STAGES } from './stages.js';
 export const HEROES = [
-  {
-    glyph: "あ",
-    name: "ぐるぐる斬り",
-    role: "範囲攻撃",
-    color: "#397b77",
-    cost: 100,
-    hp: 260,
-    attack: 36,
-    range: 65,
-    speed: 35,
-    interval: 1.5,
-    cooldown: 4,
-    description:
-      "おなかの輪をぐるんと回し、近くの敵をまとめて斬る。前線の頼れる一文字。",
-  },
-  {
-    glyph: "い",
-    name: "にほんの連撃",
-    role: "速攻",
-    color: "#bd7735",
-    cost: 60,
-    hp: 140,
-    attack: 23,
-    range: 45,
-    speed: 57,
-    interval: 0.65,
-    cooldown: 2.5,
-    description:
-      "二本の払いを交互に振り下ろす、すばやい連撃。少ない鉛筆でどんどん出撃！",
-  },
-  {
-    glyph: "う",
-    name: "まがり弾",
-    role: "遠距離",
-    color: "#6385b8",
-    cost: 140,
-    hp: 135,
-    attack: 42,
-    range: 220,
-    speed: 28,
-    interval: 1.8,
-    cooldown: 6,
-    description:
-      "頭の点を、曲線に沿ってぽーんと飛ばす。仲間の後ろから遠くの敵を狙う。",
-  },
-  {
-    glyph: "え",
-    name: "クロス払い",
-    role: "押し戻し",
-    color: "#a078ab",
-    cost: 180,
-    hp: 240,
-    attack: 48,
-    range: 110,
-    speed: 30,
-    interval: 2,
-    cooldown: 7,
-    description:
-      "交差する線から大きなバツを描き、敵を後ろに押し戻す。ピンチの前線を立て直す。",
-  },
-  {
-    glyph: "お",
-    name: "まるっとガード",
-    role: "守り",
-    color: "#cd7376",
-    cost: 220,
-    hp: 850,
-    attack: 27,
-    range: 50,
-    speed: 21,
-    interval: 1.8,
-    cooldown: 9,
-    description:
-      "大きな輪を盾にして、どっしり前線を守る。右上の点でカウンターパンチ！",
-  },
+  { glyph: 'あ', name: 'ひと筆斬り', role: '基本', color: '#397b77',
+    cost: 60, hp: 210, attack: 28, range: 55, speed: 36, interval: 1, cooldown: 3,
+    description: '近くの一体を輪の払いで斬る。短い間隔で召喚できる基本の文字。' },
+  { glyph: 'い', name: 'にほんの支え', role: '耐久', color: '#bd7735',
+    cost: 100, hp: 750, attack: 12, range: 45, speed: 30, interval: 2, cooldown: 8,
+    description: '二本の線で踏みとどまる。HPが高く、攻撃力は低い。' },
+  { glyph: 'う', name: 'まがり払い', role: '範囲攻撃', color: '#6385b8',
+    cost: 140, hp: 190, attack: 46, range: 130, speed: 30, interval: 1.7, cooldown: 7,
+    description: '曲線を払って、狙った敵とその周囲をまとめて攻撃する。' },
+  { glyph: 'え', name: '駆ける払い', role: '速攻', color: '#a078ab',
+    cost: 180, hp: 160, attack: 90, range: 45, speed: 100, interval: 0.8, cooldown: 9,
+    description: '長い払いで素早く進み、一体に連撃する。攻撃力は高いが打たれ弱い。' },
+  { glyph: 'お', name: 'むすび弾', role: '長距離', color: '#cd7376',
+    cost: 220, hp: 130, attack: 105, range: 250, speed: 27, interval: 2.5, cooldown: 10,
+    description: '結びから右上の点を飛ばし、遠くの一体を狙う。HPは低い。' },
 ];
 export const ENEMIES = [
   {
@@ -91,19 +31,19 @@ export const ENEMIES = [
   {
     glyph: "B",
     name: "ダブルバウンド",
-    hp: 240,
-    attack: 30,
+    hp: 200,
+    attack: 40,
     range: 55,
-    speed: 22,
-    interval: 1.6,
-    description: "二つのふくらみを弾ませて体当たり。",
+    speed: 65,
+    interval: 0.85,
+    description: "二つのふくらみを弾ませ、高速で前線へ走り込む。",
   },
   {
     glyph: "C",
     name: "カーブカッター",
     hp: 130,
-    attack: 25,
-    range: 170,
+    attack: 60,
+    range: 210,
     speed: 25,
     interval: 1.8,
     description: "開いた輪から三日月の刃を放つ遠距離タイプ。",
@@ -111,7 +51,7 @@ export const ENEMIES = [
   {
     glyph: "D",
     name: "アーチシールド",
-    hp: 680,
+    hp: 1100,
     attack: 36,
     range: 48,
     speed: 17,
@@ -135,9 +75,9 @@ export function heroesFor(ranks = [0, 0, 0, 0, 0]) {
   return HEROES.map((h, i) => {
     const rank = Math.max(0, Math.min(3, Math.trunc(ranks[i] || 0)));
     return { ...h, glyph: EVOLUTION[i][rank], hp: h.hp * (1 + rank * 0.08), attack: h.attack * (1 + rank * 0.08), rank,
-      range: h.range + (i === 2 ? rank * 12 : 0), splash: 80 + (i === 0 ? rank * 16 : 0),
-      openingSpeed: i === 1 ? 1 + rank * 0.15 : 1,
-      knockback: 24 + (i === 3 ? rank * 8 : 0), firstGuard: i === 4 ? rank * 0.15 : 0 };
+      range: h.range + (i === 4 ? rank * 12 : 0), splash: i === 2 ? 100 + rank * 16 : 0,
+      openingSpeed: i === 3 ? 1 + rank * 0.15 : 1,
+      knockback: i === 0 ? rank * 8 : 0, firstGuard: i === 1 ? rank * 0.15 : 0 };
   });
 }
 export function upgradeChoices(ranks, random = Math.random) {
@@ -149,15 +89,15 @@ export function upgradeChoices(ranks, random = Math.random) {
   return candidates.slice(0, 3);
 }
 export function growthDescription(kind, rank) {
-  return ['範囲 +' + rank * 16, '出撃4秒間の速さ +' + rank * 15 + '%',
-    '射程 +' + rank * 12, '押し戻し +' + rank * 8, '最初の被ダメージ −' + rank * 15 + '%'][kind];
+  return ['押し戻し +' + rank * 8, '最初の被ダメージ −' + rank * 15 + '%',
+    '範囲 +' + rank * 16, '出撃4秒間の速さ +' + rank * 15 + '%', '射程 +' + rank * 12][kind];
 }
 ENEMIES.push(
   { glyph: 'F', name: 'ふたすじ払い', hp: 380, attack: 46, range: 155, speed: 23, interval: 2.2, description: '二本の横線を払って、前線へ迫る。' },
   { glyph: 'G', name: 'うずまき突き', hp: 420, attack: 50, range: 125, speed: 22, interval: 2.3, description: '大きく曲がった輪から内側の線を突き出す。' },
 );
 ENEMIES.push(
-  { glyph: 'H', name: '読点を書くもの', hp: 260, attack: 25, range: 160, speed: 20, interval: 2.4, description: '8秒で消える「、」を前に置く。範囲攻撃で道を開こう。' },
+  { glyph: 'H', name: '読点を書くもの', hp: 260, attack: 25, range: 160, speed: 20, interval: 2.4, description: '8秒で消える「、」を前に置く。読点はHP80で、攻撃すると消える。' },
   { glyph: 'Z', name: 'さいごの一文字', hp: 1100, attack: 50, range: 200, speed: 18, interval: 2.5, description: '最後のボス。HPが半分になると、払い・守り・三連撃を順に使う。' },
 );
 export class Battle {
@@ -172,12 +112,14 @@ export class Battle {
     this.time = 0;
     this.ink = 280;
     this.level = 1;
-    this.homeHp = 2000;
+    this.homeMaxHp = 1000;
+    this.homeHp = this.homeMaxHp;
     this.enemyHp = this.config.hp;
     this.units = [];
     this.cooldowns = HEROES.map(() => 0);
     this.wave = 0;
     this.queue = [];
+    this.reinforcementAt = this.config.reinforcements.at;
     this.skill = 0;
     this.kills = 0;
     this.nextId = 0;
@@ -186,10 +128,10 @@ export class Battle {
     return 500 + (this.level - 1) * 200;
   }
   get income() {
-    return 19 + (this.level - 1) * 8;
+    return 12 + (this.level - 1) * 5;
   }
   get upgradeCost() {
-    return 100 + (this.level - 1) * 80;
+    return 180 + (this.level - 1) * 140;
   }
   start() {
     if (this.status === "ready") this.status = "playing";
@@ -212,7 +154,7 @@ export class Battle {
   }
   addUnit(kind, side, boss = false) {
     const h = (side === 1 ? this.heroes : ENEMIES)[kind],
-      k = side === 1 ? 1 : this.config.strength * (boss ? 2.2 : 1);
+      k = side === 1 ? 1 : this.config.strength * (boss ? 4 : 1);
     const u = {
       ...h,
       boss,
@@ -274,7 +216,7 @@ export class Battle {
         if (u.boss) this.bossDefeated = true;
         if (u.side === -1 && !u.obstacle) {
           this.kills++;
-          this.ink = Math.min(this.capacity, this.ink + 22 + u.kind * 9);
+          this.ink = Math.min(this.capacity, this.ink + 5 + u.kind * 2);
         }
         this.onEvent({ type: "defeat", x: u.x, side: u.side, kind: u.kind, unit: { ...u } });
       }
@@ -293,7 +235,10 @@ export class Battle {
     this.onEvent({ type: "boss", glyph: ENEMIES[this.config.boss.kind].glyph });
   }
   get nextWave() {
-    return this.config.wavePlan[this.wave] || null;
+    return this.config.wavePlan[this.wave] || { ...this.config.reinforcements, at: this.reinforcementAt, reinforcement: true };
+  }
+  queueWave(wave) {
+    wave.enemies.forEach((kind, i) => this.queue.push({ at: wave.at + i * wave.spacing, kind, writing: i % 2 === 0 }));
   }
   // 区間をまたぐフレームでも、折り目の中で費やす時間だけ減速する。
   moveDistance(u, dt) {
@@ -369,13 +314,13 @@ export class Battle {
     if (target) {
       dealt = this.damageUnit(target, amount);
       targetIds.push(target.id);
-      if (u.side === 1 && u.kind === 0) {
+      if (u.side === 1 && u.splash > 0) {
         for (const v of foes) if (v !== target && Math.abs(v.x - target.x) < u.splash) {
           this.damageUnit(v, amount * 0.65);
           targetIds.push(v.id);
         }
       }
-      if (u.side === 1 && u.kind === 3) target.x = Math.min(1055, target.x + u.knockback);
+      if (u.side === 1 && u.knockback > 0) target.x = Math.min(1055, target.x + u.knockback);
     } else if (u.side === 1) this.enemyHp = Math.max(0, this.enemyHp - amount);
     else { this.homeHp = Math.max(0, this.homeHp - amount); this.lastThreat = u.glyph; }
     this.onEvent({ type: 'hit', from: u.x, x, amount: Math.round(dealt),
@@ -430,9 +375,14 @@ export class Battle {
     const next = this.config.wavePlan[this.wave];
     if (next && this.time >= next.at) {
       this.wave++;
-      next.enemies.forEach((kind, i) => this.queue.push({ at: next.at + i * next.spacing, kind, writing: i % 2 === 0 }));
+      this.queueWave(next);
       if (this.wave === this.config.waves && !this.bossSpawned) this.spawnBoss();
-      this.onEvent({ type: "wave", wave: this.wave, label: next.label });
+      this.onEvent({ type: "wave", wave: this.wave });
+    }
+    if (this.wave === this.config.waves && this.time >= this.reinforcementAt) {
+      this.queueWave({ ...this.config.reinforcements, at: this.reinforcementAt });
+      this.reinforcementAt += this.config.reinforcements.every;
+      this.onEvent({ type: 'reinforcements' });
     }
     this.queue = this.queue.filter((s) => {
       if (this.time >= s.at) {
@@ -491,8 +441,8 @@ export class Battle {
 export function bossStatus(u) {
   if (!u?.bossPhase) return '';
   if (u.bossPhase === 'guard') return `${u.finale ? '斜線' : '輪'}の守り · 65%軽減`;
-  if (u.bossPhase === 'recovery') return u.bossBehavior === 'guard' ? `${u.finale ? '斜線' : '輪'}がゆるむ · 被ダメージ1.5倍` : 'ひとやすみ · 攻める好機';
+  if (u.bossPhase === 'recovery') return u.bossBehavior === 'guard' ? `${u.finale ? '斜線' : '輪'}がゆるむ · 被ダメージ1.5倍` : '休止';
   if (u.bossPhase === 'volley') return '三連撃';
   return u.bossBehavior === 'triple' ? '三連撃の構え'
-    : u.bossBehavior === 'sweep' ? '払いの構え · 前衛を補充' : '突きの構え';
+    : u.bossBehavior === 'sweep' ? '払いの構え' : '突きの構え';
 }

@@ -86,7 +86,7 @@ export class Renderer {
     c.setTransform(this.canvas.width / 1200, 0, 0, this.canvas.height / 440, 0, 0);
     c.clearRect(0, 0, 1200, 440);
     this.fold(b.config.fold);
-    this.base(105, b.homeHp / 2000, '自分の拠点');
+    this.base(105, b.homeHp / b.homeMaxHp, '自分の拠点');
     this.base(1095, b.enemyHp / b.config.hp, '相手の拠点');
     if (b.status === 'ready') {
       [...b.heroes.map(h => h.glyph), ...'ABCD', ENEMIES[b.config.boss.kind].glyph].forEach((glyph, i) => this.unit({
@@ -173,18 +173,17 @@ export class Renderer {
       if (u.side === 1) {
         const direction = u.side;
         if (u.kind === 0 && i === strokes.length - 1) {
+          c.translate(pulse * 3, 0);
+        } else if (u.kind === 1) {
+          c.translate(-pulse * 2, 0); c.scale(1 + pulse * 0.02, 1);
+        } else if (u.kind === 2 && i === strokes.length - 1) {
           c.translate(0, -size * 0.42); c.rotate(pulse * 0.13);
           c.translate(0, size * 0.42);
-        } else if (u.kind === 1) {
-          const beat = active ? Math.sin(Math.min(1, phase) * Math.PI * 2) : 0;
-          c.translate(beat * (i % 2 ? -1 : 1) * 4, 0);
-        } else if (u.kind === 2 && i === 0) {
-          c.translate(pulse * 6 * direction, -pulse * 5);
         } else if (u.kind === 3 && i === strokes.length - 1) {
-          c.translate(pulse * 5 * direction, 0); c.rotate(-pulse * 0.045);
-        } else if (u.kind === 4) {
-          c.translate(i === strokes.length - 1 ? pulse * 5 * direction : 0, 0);
-          if (i !== strokes.length - 1) c.scale(1 + pulse * 0.025, 1);
+          const beat = active ? Math.sin(Math.min(1, phase) * Math.PI * 2) : 0;
+          c.translate(beat * 5 * direction, 0); c.rotate(-pulse * 0.045);
+        } else if (u.kind === 4 && i === strokes.length - 1) {
+          c.translate(pulse * 6 * direction, -pulse * 5);
         }
       } else if (u.boss && u.glyph === 'E' && i > 0 && !this.reducedMotion.matches) {
         const windup = u.bossPhase === 'windup' ? Math.max(0, 1 - u.phaseTime / 1.2) : 0;

@@ -27,6 +27,11 @@ try {
   await page.evaluate(() => Promise.all([
     window.testBattle.renderer.eraser.decode(),
   ]));
+  assert.deepEqual(await page.locator('.unit-card .role').allTextContents(), ['基本', '耐久', '範囲攻撃', '速攻', '長距離']);
+  assert.deepEqual(await page.locator('.unit-card').evaluateAll(cards => cards.map(c => c.getAttribute('aria-label'))),
+    ['あを召喚 60鉛筆', 'いを召喚 100鉛筆', 'うを召喚 140鉛筆', 'えを召喚 180鉛筆', 'おを召喚 220鉛筆']);
+  assert.equal(await page.locator('#battle-hint').count(), 0);
+  assert.equal(await page.locator('#overlay p').count(), 0);
   await page.screenshot({ path: "test-results/desktop.png", fullPage: true });
   await page.locator("#start").click();
   await page.locator('[data-unit="0"]').click();
@@ -99,15 +104,18 @@ try {
   assert.ok(await page.locator('[data-stage="3"]').isEnabled());
   assert.ok(await page.locator('[data-stage="4"]').isDisabled());
   await page.keyboard.press('Escape');
+  // 通し攻略では実時間のrAFと手動の固定ステップを混ぜない。
+  const frozenTime = new Date();
+  await page.clock.install({ time: frozenTime });
+  await page.clock.pauseAt(frozenTime);
+  await page.evaluate(() => { Math.random = () => 0.5; });
   for (let stage = 0; stage < 12; stage++) {
     await page.locator('#start').click();
-    await page.evaluate(() => {
+    await page.evaluate(async () => {
+      const { strategy, SOLUTIONS, simulate } = await import('/tests/helpers/strategy.js');
       const b = window.testBattle.battle;
-      for (let i = 0; i < 60 * 300 && b.status === 'playing'; i++) {
-        if (b.level < 3 && b.ink > b.upgradeCost + 100) b.upgrade();
-        for (const kind of [4, 0, 2, 1, 3]) b.summon(kind);
-        b.cast(); b.update(1 / 60);
-      }
+      simulate(b, strategy(SOLUTIONS[b.stage]));
+      if (b.status !== 'won') throw new Error(`ページ${b.stage + 1}: ${b.status}, HP=${b.homeHp}`);
     });
     assert.equal(await page.locator('[data-evolve]').count(), 3);
     if (stage === 0) {
@@ -154,6 +162,7 @@ try {
       await page.keyboard.press('Escape');
     }
   }
+  await page.clock.resume();
   await page.reload();
   await page.locator('#start').click();
   await page.evaluate(async () => {
@@ -194,11 +203,11 @@ try {
     const { battle: b, renderer: r } = window.testBattle;
     b.wave = b.config.waves; b.units = []; b.queue = []; r.effects = [];
     b.spawnBoss(); const boss = b.units[0]; boss.x = 760; boss.timer = 0; boss.age = 1;
-    const hero = b.addUnit(4, 1); hero.x = 580; hero.speed = 0;
+    const hero = b.addUnit(1, 1); hero.x = 580; hero.speed = 0;
     b.update(1 / 60); b.status = 'paused';
   });
   await page.waitForTimeout(150);
-  assert.match(await page.locator('#battle-hint').innerText(), /三連撃の構え/);
+  assert.match(await page.locator('#battle-status').innerText(), /三連撃の構え/);
   await page.screenshot({ path: 'test-results/e-windup.png', fullPage: true });
   const warningFrame = await page.locator('#battle').evaluate(c => c.toDataURL());
   await page.waitForTimeout(150);
@@ -209,7 +218,7 @@ try {
     b.status = 'paused';
   });
   await page.waitForTimeout(150);
-  assert.match(await page.locator('#battle-hint').innerText(), /攻める好機/);
+  assert.match(await page.locator('#battle-status').innerText(), /休止/);
   await page.screenshot({ path: 'test-results/e-recovery.png', fullPage: true });
   // 各文字の一画が攻撃中に動き、動きを減らす設定では静止する。
   await page.evaluate(() => {
@@ -234,20 +243,20 @@ try {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.locator('#stages').click();
   await page.locator('[data-stage="1"]').click();
-  assert.match(await page.locator('#overlay').innerText(), /折り目/);
+  assert.equal(await page.locator('#overlay p').count(), 0);
   await page.locator('#start').click();
-  assert.match(await page.locator('#battle-hint').innerText(), /移動速度/);
+  assert.match(await page.locator('#battle-status').innerText(), /移動速度/);
   await page.evaluate(() => {
     const b = window.testBattle.battle;
     b.units = []; b.status = 'paused';
-    b.addUnit(4, 1).x = 555; b.addUnit(2, 1).x = 415;
+    b.addUnit(1, 1).x = 555; b.addUnit(4, 1).x = 415;
     b.addUnit(3, -1).x = 645; b.addUnit(2, -1).x = 790;
   });
   await page.screenshot({ path: 'test-results/fold.png', fullPage: true });
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-    for (const selector of ['#battle-hint', '#wave-preview']) {
+    for (const selector of ['#battle-status', '#wave-preview']) {
       const box = await page.locator(selector).boundingBox();
       assert.ok(box.x >= 0 && box.x + box.width <= width);
     }
@@ -255,7 +264,7 @@ try {
   }
   await page.setViewportSize({ width: 1440, height: 1050 });
   for (const [stage, glyph, initial, seconds, recovered] of [
-    [4, 'F', /払いの構え/, 1.5, /攻める好機/],
+    [4, 'F', /払いの構え/, 1.5, /休止/],
     [5, 'G', /65%軽減/, 3.5, /1.5倍/],
   ]) {
     await page.locator('#stages').click();
@@ -265,12 +274,12 @@ try {
       const { battle: b, renderer: r } = window.testBattle;
       b.wave = b.config.waves; b.units = []; b.queue = []; r.effects = [];
       b.spawnBoss(); const boss = b.units[0]; boss.x = 760; boss.timer = 0; boss.age = 1;
-      const hero = b.addUnit(4, 1); hero.x = 650; hero.speed = 0; hero.timer = 100;
-      const rear = b.addUnit(2, 1); rear.x = 500; rear.speed = 0; rear.timer = 100;
+      const hero = b.addUnit(1, 1); hero.x = 650; hero.speed = 0; hero.timer = 100;
+      const rear = b.addUnit(4, 1); rear.x = 500; rear.speed = 0; rear.timer = 100;
       b.update(1 / 60); b.status = 'paused';
     });
     await page.waitForTimeout(150);
-    assert.match(await page.locator('#battle-hint').innerText(), initial);
+    assert.match(await page.locator('#battle-status').innerText(), initial);
     await page.screenshot({ path: `test-results/${glyph}-prepare.png`, fullPage: true });
     await page.evaluate(seconds => {
       const b = window.testBattle.battle; b.status = 'playing';
@@ -278,7 +287,7 @@ try {
       b.status = 'paused';
     }, seconds);
     await page.waitForTimeout(150);
-    assert.match(await page.locator('#battle-hint').innerText(), recovered);
+    assert.match(await page.locator('#battle-status').innerText(), recovered);
     await page.screenshot({ path: `test-results/${glyph}-recovery.png`, fullPage: true });
   }
   // 章末の再挑戦でも、そのページに入った時点の編成に戻る。
@@ -330,11 +339,11 @@ try {
     const b = window.testBattle.battle; b.units = []; b.wave = b.config.waves;
     b.spawnBoss(); const z = b.units[0]; z.x = 760; z.age = 1;
     z.hp = z.maxHp * 0.49; b.advanceFinale(z);
-    const hero = b.addUnit(4, 1); hero.x = 650; hero.age = 1;
+    const hero = b.addUnit(1, 1); hero.x = 650; hero.age = 1;
     z.timer = 0; b.update(1 / 60); b.status = 'paused';
   });
   await page.waitForTimeout(150);
-  assert.match(await page.locator('#battle-hint').innerText(), /Z：払いの構え/);
+  assert.match(await page.locator('#battle-status').innerText(), /Z：払いの構え/);
   await page.screenshot({ path: 'test-results/final-boss.png', fullPage: true });
   // 画面サイズや背景フィルターの異なる章を往復しても開始ボタンを操作できる。
   for (const width of [390, 1440]) {

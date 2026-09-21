@@ -27,7 +27,8 @@ try {
   assert.ok(await page.locator('[data-stage="6"]').isEnabled());
   assert.ok(await page.locator('[data-stage="7"]').isDisabled());
   await page.locator('[data-stage="6"]').tap();
-  assert.match(await page.locator('#overlay').innerText(), /書き|完成/);
+  assert.match(await page.locator('#chapter-name').innerText(), /第3章/);
+  assert.equal(await page.locator('#overlay p').count(), 0);
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await page.screenshot({ path: 'test-results/production.png', fullPage: true });
   await page.evaluate(() => localStorage.setItem('mojimoji-progress', '{invalid'));
