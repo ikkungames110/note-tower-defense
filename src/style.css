@@ -142,3 +142,31 @@ dialog li { margin: 12px 0; }
   #announcement { top: 20%; font-size: 10px; max-width: 95%; white-space: normal; }
 }
 @media (prefers-reduced-motion: reduce) { button { transition: none; } }
+
+.evolution-choices { display: flex; gap: 10px; justify-content: center; }
+.evolution-choices button { background: #f5f0e5ed; padding: 12px 18px; }
+.evolution-choices button > span { display: flex; align-items: center; }
+.evolution-choices .letter { width: 44px; height: 50px; }
+.evolution-choices small { display: block; margin-top: 5px; }
+.final-letters { display: flex; }
+.final-letters .letter { width: 18%; }
+@media (max-width: 600px) {
+  .overlay:has(.evolution-choices) { padding: 8px; }
+  .overlay:has(.evolution-choices) h2 { font-size: 17px; margin: 0; }
+  .overlay:has(.evolution-choices) p { font-size: 10px; margin: 5px 0; }
+  .evolution-choices { gap: 5px; }
+  .evolution-choices button { padding: 5px 8px; }
+  .evolution-choices .letter { width: 25px; height: 30px; }
+  .evolution-choices small { font-size: 10px; margin: 0; }
+}
+
+.battle-notes { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 20px; padding-bottom: 12px; margin-bottom: 10px; border-bottom: 1px solid #c9bda84a; font-size: 11px; line-height: 1.7; }
+#wave-preview { font-variant-numeric: tabular-nums; color: #796b58; }
+.overlay p { max-width: 390px; line-height: 1.8; }
+@media (max-width: 540px) {
+  .battle-notes { font-size: 10px; gap: 3px; flex-direction: column; }
+}
+
+.page-label, #wave { white-space: nowrap; flex-shrink: 0; }
+.stage-button { min-width: 0; }
+.battle-tools { flex-shrink: 0; }

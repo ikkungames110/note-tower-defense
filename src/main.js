@@ -1,5 +1,5 @@
 import "./style.css";
-import { Battle, HEROES, ENEMIES, STAGES } from "./game.js";
+import { Battle, HEROES, ENEMIES, STAGES, upgradeChoices, heroesFor } from "./game.js";
 import { Renderer } from "./render.js";
 import { Sound } from "./audio.js";
 import { letterSvg } from "./letters.js";
@@ -8,28 +8,30 @@ try {
   const data = JSON.parse(localStorage.getItem("mojimoji-progress") || "[]");
   if (Array.isArray(data))
     cleared = [
-      ...new Set(data.filter((n) => Number.isInteger(n) && n >= 0 && n < 3)),
+      ...new Set(data.filter((n) => Number.isInteger(n) && n >= 0 && n < STAGES.length)),
     ];
 } catch {}
 const app = document.querySelector("#app");
 app.innerHTML = `<main>
-<header><a class="brand" href="./" aria-label="もじもじ大作戦 ホーム"><h1>もじもじ大作戦</h1></a><nav aria-label="メニュー"><button id="guide">あそびかた</button><button id="book">文字のこと</button><button id="sound" aria-label="サウンドを有効にする">♪ OFF</button></nav></header>
+<header><a class="brand" href="./" aria-label="ノート上の戦い ホーム"><h1>ノート上の戦い</h1></a><nav aria-label="メニュー"><button id="guide">あそびかた</button><button id="book">文字のこと</button><button id="sound" aria-label="サウンドを有効にする">♪ OFF</button></nav></header>
 <section class="notebook" aria-label="ゲーム">
 <div class="field">
 <img class="scene" src="${import.meta.env.BASE_URL}assets/classroom-notebook.png" alt="窓から光が差す教室の机に開かれたノート" fetchpriority="high" />
-<div class="battle-toolbar"><button id="stages" class="stage-button" aria-label="ページをえらぶ"><span class="page-label"><b id="page-number">01</b> / 03</span><span id="stage-name"></span><span aria-hidden="true">⌄</span></button><div class="battle-tools"><span id="wave"></span><button id="speed" aria-label="速度切替">×1</button><button id="pause" aria-label="開始・再開">▷</button></div></div>
+<div class="battle-toolbar"><button id="stages" class="stage-button" aria-label="ページをえらぶ"><span class="page-label"><b id="page-number">01</b> / ${String(STAGES.length).padStart(2, '0')}</span><span id="stage-name"></span><span aria-hidden="true">⌄</span></button><div class="battle-tools"><span id="wave"></span><button id="speed" aria-label="速度切替">×1</button><button id="pause" aria-label="開始・再開">▷</button></div></div>
 <canvas id="battle" aria-label="ノートに立つ鉛筆の文字。左のあいうえおを守り、右のABCDEを倒す戦場"></canvas>
 <div id="overlay" class="overlay"></div><div id="announcement" role="status"></div>
 </div>
 <div class="command-area">
-<div class="resource-row"><div class="ink"><span>インク</span><strong id="ink-value"></strong><div class="meter"><i id="ink-fill"></i></div><span id="income"></span></div><div class="resource-actions"><button id="upgrade">ためる力 <span id="upgrade-cost"></span><kbd>U</kbd></button><button id="skill">消しゴム <span id="skill-charge"></span><kbd>Q</kbd></button></div></div>
-<div class="cards">${HEROES.map((h, i) => `<button class="unit-card" data-unit="${i}" aria-label="${h.glyph}を召喚 ${h.cost}インク" title="${h.role}：${h.description}"><kbd>${i + 1}</kbd><span class="glyph">${letterSvg(h.glyph)}</span><span class="card-detail"><span class="role">${h.role}</span><span class="card-bottom">${h.cost}<span class="card-state"></span></span></span><span class="cooldown"></span></button>`).join("")}</div>
+<div class="battle-notes"><span id="battle-hint"></span><span id="wave-preview"></span></div>
+<div class="resource-row"><div class="ink"><span>鉛筆</span><strong id="ink-value"></strong><div class="meter"><i id="ink-fill"></i></div><span id="income"></span></div><div class="resource-actions"><button id="upgrade">ためる力 <span id="upgrade-cost"></span><kbd>U</kbd></button><button id="skill">消しゴム <span id="skill-charge"></span><kbd>Q</kbd></button></div></div>
+<div class="cards">${HEROES.map((h, i) => `<button class="unit-card" data-unit="${i}" aria-label="${h.glyph}を召喚 ${h.cost}鉛筆" title="${h.role}：${h.description}"><kbd>${i + 1}</kbd><span class="glyph">${letterSvg(h.glyph)}</span><span class="card-detail"><span class="role">${h.role}</span><span class="card-bottom">${h.cost}<span class="card-state"></span></span></span><span class="cooldown"></span></button>`).join("")}</div>
 </div></section>
 <footer><span>あのころの、ノートのすみで。</span><span id="progress"></span></footer>
 </main><dialog id="dialog"><button class="close" aria-label="閉じる">×</button><div id="dialog-body"></div></dialog>`;
 const $ = (s) => document.querySelector(s),
   sound = new Sound(),
   renderer = new Renderer($("#battle"));
+let ranks = [0, 0, 0, 0, 0], entryRanks = [...ranks], choices = [], rewardChosen = false;
 let battle,
   speed = 1,
   last = 0,
@@ -40,13 +42,23 @@ function notify(text) {
   clearTimeout(noticeTimer);
   noticeTimer = setTimeout(() => ($("#announcement").textContent = ""), 2200);
 }
-function newBattle(stage = 0) {
+function newBattle(stage = 0, loadout = [0, 0, 0, 0, 0]) {
+  ranks = [...loadout];
+  entryRanks = [...loadout];
+  choices = [];
+  rewardChosen = false;
   renderer.effects = [];
+  clearTimeout(noticeTimer);
+  $("#announcement").textContent = "";
   battle = new Battle(stage, (e) => {
     renderer.event(e);
     sound.play(e.type);
-    if (e.type === "wave") notify(`第 ${e.wave} 波`);
+    if (e.type === "boss") notify(`ボス ${e.glyph} が登場`);
+    if (e.type === "wave") notify(`第 ${e.wave} 波 · ${e.label}`);
+    if (e.type === "bossWindup") notify("Eが構えた。三連撃に備えよう");
+    if (e.type === "bossRecovery") notify("Eがひとやすみ。攻める好機！");
     if (e.type === "won") {
+      choices = upgradeChoices(ranks);
       if (!cleared.includes(battle.stage)) {
         cleared.push(battle.stage);
         try {
@@ -58,11 +70,20 @@ function newBattle(stage = 0) {
       showOverlay();
     }
     if (e.type === "lost") showOverlay();
-  });
+  }, ranks);
+  refreshCards();
   $("#stage-name").textContent = battle.config.name;
   $("#page-number").textContent = String(stage + 1).padStart(2, "0");
   showOverlay();
   updateUI();
+}
+function refreshCards() {
+  document.querySelectorAll('[data-unit]').forEach((el, i) => {
+    const h = battle.heroes[i];
+    el.querySelector('.glyph').innerHTML = letterSvg(h.glyph);
+    el.setAttribute('aria-label', `${h.glyph}を召喚 ${h.cost}鉛筆`);
+    el.title = `${h.role} · HP ${Math.round(h.hp)} / 攻撃 ${Math.round(h.attack)}`;
+  });
 }
 function showOverlay() {
   const o = $("#overlay");
@@ -76,19 +97,35 @@ function showOverlay() {
     lost: "もう一度、書きなおそう。",
   };
   const descriptions = {
-    ready: "文字をえらんで、右の陣地へ。",
+    ready: battle.config.tip,
     paused: "",
-    won: `${Math.floor(battle.time)} 秒 · ${cleared.length} / 3 ページ`,
+    won: `${Math.floor(battle.time)} 秒 · ${cleared.length} / ${STAGES.length} ページ`,
     lost: "「お」で守って、「う」で援護。",
   };
-  o.innerHTML = `<h2>${titles[state]}</h2>${descriptions[state] ? `<p>${descriptions[state]}</p>` : ""}<div class="overlay-actions"><button class="primary" id="start">${state === "ready" ? "はじめる" : state === "paused" ? "つづける" : "もう一度"}<span aria-hidden="true"> →</span></button>${state === "won" && battle.stage < 2 ? '<button id="next" class="next">次のページへ →</button>' : ""}</div>`;
+  if (state === 'won' && !rewardChosen) {
+    o.innerHTML = `<h2>次の一文字を、書こう。</h2><p>1つ選んで強化。HP・攻撃力が初期値の8%分アップ。<br>役割・鉛筆の消費量はそのまま。</p><div class="evolution-choices">${choices.map(c => `<button data-evolve="${c.kind}" aria-label="${c.from}から${c.glyph}に強化"><span>${letterSvg(c.from)} → ${letterSvg(c.glyph)}</span><small>${HEROES[c.kind].role}</small></button>`).join('')}</div>`;
+    o.querySelectorAll('[data-evolve]').forEach(el => el.onclick = () => {
+      if (rewardChosen) return;
+      ranks[Number(el.dataset.evolve)]++;
+      rewardChosen = true;
+      battle.heroes = heroesFor(ranks);
+      refreshCards();
+      showOverlay();
+    });
+    return;
+  }
+  o.innerHTML = `<h2>${titles[state]}</h2>${descriptions[state] ? `<p>${descriptions[state]}</p>` : ""}<div class="overlay-actions"><button class="primary" id="start">${state === "ready" ? "はじめる" : state === "paused" ? "つづける" : state === "won" && battle.stage === STAGES.length - 1 ? "強化した文字を見る" : "もう一度"}<span aria-hidden="true"> →</span></button>${state === "won" && battle.stage < STAGES.length - 1 ? '<button id="next" class="next">次のページへ →</button>' : ""}</div>`;
   $("#start").onclick = () => {
-    if (state === "won" || state === "lost") newBattle(battle.stage);
+    if (state === 'won' && battle.stage === STAGES.length - 1) {
+      openDialog(`<h2>この一冊で育った文字</h2><div class="final-letters">${battle.heroes.map(h => letterSvg(h.glyph)).join('')}</div><p>全${STAGES.length}ページ、クリア！ ページ選択から新しい攻略を始められます。</p>`);
+      return;
+    }
+    if (state === "won" || state === "lost") newBattle(battle.stage, entryRanks);
     battle.status = "playing";
     showOverlay();
     updateUI();
   };
-  if ($("#next")) $("#next").onclick = () => newBattle(battle.stage + 1);
+  if ($("#next")) $("#next").onclick = () => newBattle(battle.stage + 1, ranks);
 }
 function pause() {
   if (battle.status === "playing") battle.status = "paused";
@@ -112,10 +149,21 @@ function updateUI() {
   $("#skill").disabled = !playing || battle.skill < 30;
   $("#skill").style.setProperty("--charge", `${(battle.skill / 30) * 100}%`);
   $("#wave").textContent = `第 ${battle.wave} 波 / ${battle.config.waves}`;
+  const boss = battle.units.find(u => u.boss && u.hp > 0);
+  const phase = boss?.bossPhase;
+  $("#battle-hint").textContent = phase === 'windup' ? 'E：三連撃の構え → 「お」で前線を守ろう'
+    : phase === 'volley' ? 'E：三連撃中'
+    : phase === 'recovery' ? 'E：ひとやすみ → 攻める好機'
+    : battle.config.fold ? '折り目：敵も味方も移動速度 ½' : '群れには「あ」 · 遠くには「う」';
+  const next = battle.nextWave;
+  const enemies = next ? [...new Set(next.enemies)].map(kind => ENEMIES[kind].glyph).join('・') : '';
+  $("#wave-preview").textContent = next
+    ? `次の波まで ${Math.max(0, Math.ceil(next.at - battle.time))}秒 · ${enemies}${battle.wave === battle.config.waves - 1 ? ' ＋ ボス' : ''}`
+    : '最後の波 · 拠点とボスを倒そう';
   $("#pause").textContent = playing ? "Ⅱ" : "▷";
   $("#pause").setAttribute("aria-label", playing ? "一時停止" : "開始・再開");
   $("#pause").disabled = ["won", "lost"].includes(battle.status);
-  $("#progress").textContent = `${"✶".repeat(cleared.length)} ${cleared.length} / 3 ページ`;
+  $("#progress").textContent = `${"✶".repeat(cleared.length)} ${cleared.length} / ${STAGES.length} ページ`;
   document.querySelectorAll("[data-unit]").forEach((el, i) => {
     const cd = battle.cooldowns[i];
     el.disabled =
@@ -127,7 +175,7 @@ function updateUI() {
       cd > 0
         ? `${cd.toFixed(1)} 秒`
         : battle.ink < HEROES[i].cost
-          ? "インク待ち"
+          ? "鉛筆待ち"
           : "";
     el.querySelector(".cooldown").style.width =
       `${(cd / HEROES[i].cooldown) * 100}%`;
@@ -158,15 +206,15 @@ dialog.addEventListener("click", (e) => {
 });
 $("#guide").onclick = () =>
   openDialog(
-    `<h2>あそびかた</h2><p>左を守って、右の陣地をなくせば勝ち。<br>文字は、自分で進んで戦います。</p><ol><li>インクで文字を呼ぶ。<kbd>1–5</kbd></li><li>「ためる力」でインクの回復と上限を増やす。<kbd>U</kbd></li><li>30秒たまった「消しゴム」で敵を押し戻す。<kbd>Q</kbd></li></ol><p><kbd>Space</kbd> 開始・ひとやすみ ／ ×1・×2で速度変更</p><p>クリアしたページだけ、このブラウザーに記録します。</p>`,
+    `<h2>あそびかた</h2><p>左を守って、右の陣地をなくせば勝ち。<br>文字は、自分で進んで戦います。</p><ol><li>鉛筆で文字を呼ぶ。<kbd>1–5</kbd></li><li>「ためる力」で鉛筆の回復と上限を増やす。<kbd>U</kbd></li><li>30秒たまった「消しゴム」で敵を押し戻す。<kbd>Q</kbd></li></ol><p><kbd>Space</kbd> 開始・ひとやすみ ／ ×1・×2で速度変更</p><p>各ページには大きなボスがいます。拠点を削り、ボスを倒すとクリア。3択から文字を1つ強化し、次のページへ引き継ぎます。</p><p>次の波の文字と残り秒数を見て、召喚に備えましょう。2・3ページの折り目では、敵も味方も移動速度が半分になります。射程と攻撃速度は変わりません。</p><p>ボスEは1.2秒構えてから三連撃。その後2.5秒は攻撃も移動もしません。消しゴムで射程外へ押し戻すと、その一撃を避けられます。</p><p>再挑戦はそのページ開始時の強化に戻ります。ページ選択・再読み込みで文字の強化はリセット。クリアしたページだけ、このブラウザーに記録します。</p>`,
   );
 $("#book").onclick = () =>
   openDialog(
-    `<h2>文字のこと</h2><h3>ひらがな組</h3>${HEROES.map((h) => `<article class="dex"><span>${letterSvg(h.glyph)}</span><div><b>${h.name} <small>${h.role} · ${h.cost}インク</small></b><p>${h.description}</p></div></article>`).join("")}<h3>アルファベット組</h3>${ENEMIES.map((h) => `<article class="dex"><span>${letterSvg(h.glyph)}</span><div><b>${h.name}</b><p>${h.description}</p></div></article>`).join("")}`,
+    `<h2>文字のこと</h2><h3>ひらがな組</h3>${battle.heroes.map((h) => `<article class="dex"><span>${letterSvg(h.glyph)}</span><div><b>${h.name} <small>${h.role} · ${h.cost}鉛筆</small></b><p>${h.description}</p></div></article>`).join("")}<h3>アルファベット組</h3>${ENEMIES.map((h) => `<article class="dex"><span>${letterSvg(h.glyph)}</span><div><b>${h.name}</b><p>${h.description}</p></div></article>`).join("")}`,
   );
 $("#stages").onclick = () => {
   openDialog(
-    `<h2>ページをえらぶ</h2><p>ページを移ると、今の戦闘は最初からになります。</p>${STAGES.map((s, i) => `<button class="stage-choice" data-stage="${i}" ${i > 0 && !cleared.includes(i - 1) ? "disabled" : ""}><span>0${i + 1}</span><div><b>${s.name}</b><small>${s.subtitle}</small></div><span>${cleared.includes(i) ? "★" : i === 0 || cleared.includes(i - 1) ? "→" : "未解放"}</span></button>`).join("")}`,
+    `<h2>ページをえらぶ</h2><p>ページを移ると、今の戦闘は最初からになります。</p>${STAGES.map((s, i) => `<button class="stage-choice" data-stage="${i}" ${i > 0 && !cleared.includes(i - 1) ? "disabled" : ""}><span>${String(i + 1).padStart(2, "0")}</span><div><b>${s.name}</b><small>${s.subtitle}</small></div><span>${cleared.includes(i) ? "★" : i === 0 || cleared.includes(i - 1) ? "→" : "未解放"}</span></button>`).join("")}`,
   );
   document.querySelectorAll("[data-stage]").forEach(
     (el) =>

@@ -1,3 +1,5 @@
+import { STAGES } from './stages.js';
+export { STAGES } from './stages.js';
 export const HEROES = [
   {
     glyph: "あ",
@@ -27,7 +29,7 @@ export const HEROES = [
     interval: 0.65,
     cooldown: 2.5,
     description:
-      "二本の払いを交互に振り下ろす、すばやい連撃。少ないインクでどんどん出撃！",
+      "二本の払いを交互に振り下ろす、すばやい連撃。少ない鉛筆でどんどん出撃！",
   },
   {
     glyph: "う",
@@ -127,35 +129,32 @@ export const ENEMIES = [
     description: "三本の横線をビームにして飛ばす強敵。",
   },
 ];
-export const STAGES = [
-  {
-    name: "はじまりの1ページ",
-    subtitle: "まずは、余白からはじめよう。",
-    hp: 1500,
-    waves: 5,
-    interval: 17,
-    strength: 1,
-  },
-  {
-    name: "放課後のらくがき",
-    subtitle: "ページのすみで、大さわぎ。",
-    hp: 2200,
-    waves: 6,
-    interval: 16,
-    strength: 1.2,
-  },
-  {
-    name: "さいごの見開き",
-    subtitle: "このノートの、主役になろう。",
-    hp: 3000,
-    waves: 7,
-    interval: 15,
-    strength: 1.4,
-  },
-];
+// 同じ母音の次の行へ。全3ページの一周で最大3回進化する。
+export const EVOLUTION = ['あかさた', 'いきしち', 'うくすつ', 'えけせて', 'おこそと'];
+export function heroesFor(ranks = [0, 0, 0, 0, 0]) {
+  return HEROES.map((h, i) => {
+    const rank = Math.max(0, Math.min(3, Math.trunc(ranks[i] || 0)));
+    return { ...h, glyph: EVOLUTION[i][rank], hp: h.hp * (1 + rank * 0.08), attack: h.attack * (1 + rank * 0.08), rank };
+  });
+}
+export function upgradeChoices(ranks, random = Math.random) {
+  const candidates = heroesFor(ranks).flatMap((h, kind) => h.rank < 3 ? [{ kind, from: h.glyph, glyph: EVOLUTION[kind][h.rank + 1] }] : []);
+  for (let i = candidates.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+  }
+  return candidates.slice(0, 3);
+}
+ENEMIES.push(
+  { glyph: 'F', name: 'ふたすじ払い', hp: 380, attack: 46, range: 155, speed: 23, interval: 2.2, description: '二本の横線を払って、前線へ迫る。' },
+  { glyph: 'G', name: 'うずまき突き', hp: 420, attack: 50, range: 125, speed: 22, interval: 2.3, description: '大きく曲がった輪から内側の線を突き出す。' },
+);
 export class Battle {
-  constructor(stage = 0, onEvent = () => {}) {
+  constructor(stage = 0, onEvent = () => {}, ranks = [0, 0, 0, 0, 0]) {
     this.stage = stage;
+    this.heroes = heroesFor(ranks);
+    this.bossSpawned = false;
+    this.bossDefeated = false;
     this.config = STAGES[stage];
     this.onEvent = onEvent;
     this.status = "ready";
@@ -185,7 +184,7 @@ export class Battle {
     if (this.status === "ready") this.status = "playing";
   }
   summon(kind) {
-    const h = HEROES[kind];
+    const h = this.heroes[kind];
     if (
       this.status !== "playing" ||
       !h ||
@@ -200,22 +199,26 @@ export class Battle {
     this.onEvent({ type: "summon", x: 145, kind, side: 1 });
     return true;
   }
-  addUnit(kind, side) {
-    const h = (side === 1 ? HEROES : ENEMIES)[kind],
-      k = side === 1 ? 1 : this.config.strength;
+  addUnit(kind, side, boss = false) {
+    const h = (side === 1 ? this.heroes : ENEMIES)[kind],
+      k = side === 1 ? 1 : this.config.strength * (boss ? 2.2 : 1);
     const u = {
       ...h,
+      boss,
       id: this.nextId++,
       kind,
       side,
       x: side === 1 ? 145 : 1055,
       hp: h.hp * k,
       maxHp: h.hp * k,
-      attack: h.attack * k,
+      attack: h.attack * (side === 1 ? 1 : this.config.strength * (boss ? 1.2 : 1)),
       timer: 0.35,
       action: 0,
       stride: 0,
       moving: false,
+      bossPhase: null,
+      phaseTime: 0,
+      strikes: 0,
     };
     this.units.push(u);
     return u;
@@ -235,19 +238,22 @@ export class Battle {
   cast() {
     if (this.status !== "playing" || this.skill < 30) return false;
     this.skill = 0;
+    const erased = this.units.filter(u => u.side === -1).map(u => ({ ...u }));
     for (const u of this.units)
       if (u.side === -1) {
         u.hp -= 240;
         u.x = Math.min(1055, u.x + 65);
       }
     this.enemyHp = Math.max(0, this.enemyHp - 100);
-    this.onEvent({ type: "skill" });
+    this.onEvent({ type: "skill", erased });
     this.resolve();
     return true;
   }
   resolve() {
+    if (["won", "lost"].includes(this.status)) return;
     for (const u of this.units)
       if (u.hp <= 0) {
+        if (u.boss) this.bossDefeated = true;
         if (u.side === -1) {
           this.kills++;
           this.ink = Math.min(this.capacity, this.ink + 22 + u.kind * 9);
@@ -255,10 +261,81 @@ export class Battle {
         this.onEvent({ type: "defeat", x: u.x, side: u.side, kind: u.kind });
       }
     this.units = this.units.filter((u) => u.hp > 0);
-    if (this.homeHp <= 0 || this.enemyHp <= 0) {
+    // 拠点を早く削っても、ボスとの戦闘は必ず行う。
+    if (this.enemyHp <= 0 && !this.bossSpawned) this.spawnBoss();
+    if (this.homeHp <= 0 || (this.enemyHp <= 0 && this.bossDefeated)) {
       this.status = this.homeHp <= 0 ? "lost" : "won";
       this.onEvent({ type: this.status });
     }
+  }
+  spawnBoss() {
+    if (this.bossSpawned) return;
+    this.bossSpawned = true;
+    this.addUnit(this.config.boss.kind, -1, true);
+    this.onEvent({ type: "boss", glyph: ENEMIES[this.config.boss.kind].glyph });
+  }
+  get nextWave() {
+    return this.config.wavePlan[this.wave] || null;
+  }
+  // 区間をまたぐフレームでも、折り目の中で費やす時間だけ減速する。
+  moveDistance(u, dt) {
+    if (u.speed <= 0) return 0;
+    const fold = this.config.fold;
+    if (!fold) return u.speed * dt;
+    const entry = u.side === 1 ? fold.from : fold.to;
+    const exit = u.side === 1 ? fold.to : fold.from;
+    let x = u.x, remaining = dt, distance = 0;
+    if ((entry - x) * u.side > 0) {
+      const d = Math.min((entry - x) * u.side, u.speed * remaining);
+      distance += d; x += d * u.side; remaining -= d / u.speed;
+    }
+    if ((exit - x) * u.side > 0 && remaining > 0) {
+      const d = Math.min((exit - x) * u.side, u.speed * fold.speed * remaining);
+      distance += d; remaining -= d / (u.speed * fold.speed);
+    }
+    return distance + u.speed * remaining;
+  }
+  attackTarget(u, target, foes, x, multiplier = 1) {
+    const amount = u.attack * multiplier;
+    const targetIds = [];
+    if (target) {
+      target.hp -= amount;
+      targetIds.push(target.id);
+      if (u.side === 1 && u.kind === 0) {
+        for (const v of foes) if (v !== target && Math.abs(v.x - target.x) < 80) {
+          v.hp -= amount * 0.65;
+          targetIds.push(v.id);
+        }
+      }
+      if (u.side === 1 && u.kind === 3) target.x = Math.min(1055, target.x + 24);
+    } else if (u.side === 1) this.enemyHp = Math.max(0, this.enemyHp - amount);
+    else this.homeHp = Math.max(0, this.homeHp - amount);
+    this.onEvent({ type: 'hit', from: u.x, x, amount: Math.round(amount),
+      kind: u.kind, side: u.side, attackerId: u.id, targetIds });
+  }
+  updateTriple(u, dt, target, baseInRange, foes) {
+    if (!u.bossPhase) {
+      if (u.timer > 0 || (!target && !baseInRange)) return false;
+      u.bossPhase = 'windup'; u.phaseTime = 1.2; u.strikes = 0;
+      this.onEvent({ type: 'bossWindup', id: u.id });
+      return true;
+    }
+    u.phaseTime -= dt;
+    if (u.phaseTime > 0) return true;
+    if (u.bossPhase === 'recovery') {
+      u.bossPhase = null;
+      u.timer = 0.2;
+      return true;
+    }
+    u.bossPhase = 'volley';
+    u.strikes++;
+    u.action = 0.24;
+    if (target || baseInRange) this.attackTarget(u, target, foes, target ? target.x : 130, 0.6);
+    if (u.strikes === 3) {
+      u.bossPhase = 'recovery'; u.phaseTime = 2.5;
+      this.onEvent({ type: 'bossRecovery', id: u.id });
+    } else u.phaseTime += 0.28;
+    return true;
   }
   update(dt) {
     if (this.status !== "playing") return;
@@ -266,21 +343,12 @@ export class Battle {
     this.ink = Math.min(this.capacity, this.ink + this.income * dt);
     this.skill = Math.min(30, this.skill + dt);
     this.cooldowns = this.cooldowns.map((c) => Math.max(0, c - dt));
-    if (
-      this.wave < this.config.waves &&
-      this.time >= 3 + this.wave * this.config.interval
-    ) {
+    const next = this.config.wavePlan[this.wave];
+    if (next && this.time >= next.at) {
       this.wave++;
-      const count = 2 + this.wave + this.stage;
-      for (let i = 0; i < count; i++)
-        this.queue.push({
-          at: this.time + i * 2.3,
-          kind:
-            i === count - 1 && this.wave === this.config.waves
-              ? 4
-              : (i + this.wave - 1) % Math.min(4, 1 + this.wave),
-        });
-      this.onEvent({ type: "wave", wave: this.wave });
+      next.enemies.forEach((kind, i) => this.queue.push({ at: next.at + i * next.spacing, kind }));
+      if (this.wave === this.config.waves && !this.bossSpawned) this.spawnBoss();
+      this.onEvent({ type: "wave", wave: this.wave, label: next.label });
     }
     this.queue = this.queue.filter((s) => {
       if (this.time >= s.at) {
@@ -303,34 +371,19 @@ export class Battle {
       const inRange = target && Math.abs(target.x - u.x) <= u.range;
       const base = u.side === 1 ? 1070 : 130;
       const baseInRange = Math.abs(base - u.x) <= u.range;
+      if (u.boss && this.config.boss.behavior === 'triple' &&
+          this.updateTriple(u, dt, inRange ? target : null, baseInRange, foes)) continue;
       if (inRange || baseInRange) {
         if (u.timer <= 0) {
           u.timer = u.interval;
           u.action = 0.38;
           const x = inRange ? target.x : base;
-          if (inRange) {
-            target.hp -= u.attack;
-            if (u.side === 1 && u.kind === 0)
-              for (const v of foes)
-                if (v !== target && Math.abs(v.x - target.x) < 80)
-                  v.hp -= u.attack * 0.65;
-            if (u.side === 1 && u.kind === 3)
-              target.x = Math.min(1055, target.x + 24);
-          } else if (u.side === 1)
-            this.enemyHp = Math.max(0, this.enemyHp - u.attack);
-          else this.homeHp = Math.max(0, this.homeHp - u.attack);
-          this.onEvent({
-            type: "hit",
-            from: u.x,
-            x,
-            amount: Math.round(u.attack),
-            kind: u.kind,
-            side: u.side,
-          });
+          this.attackTarget(u, inRange ? target : null, foes, x);
         }
       } else {
-        u.x += u.speed * dt * u.side;
-        u.stride += (u.speed * dt) / 12;
+        const distance = this.moveDistance(u, dt);
+        u.x += distance * u.side;
+        u.stride += distance / 12;
         u.moving = true;
       }
     }
