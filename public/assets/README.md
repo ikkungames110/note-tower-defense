@@ -6,9 +6,19 @@
 
 Use case: precise-object-edit. Asset type: photorealistic background plate for a browser game. Edit target: supplied selected concept 03. Remove ALL ten standing handwritten letters (あいうえお ABCDE) and their cast shadows, reconstruct clean ruled notebook paper in their places. Preserve everything else: exact very low camera angle, open notebook paper fibers, gently curved left page, subtle blue-gray ruled lines, layered page edge, wooden desk, strongly blurred empty nostalgic Japanese classroom, dark green chalkboard, warm natural window light from the left. No text, no characters, no objects added, no dust or graphite debris. Retain the exact original composition and wide aspect ratio. Photorealistic clean empty notebook stage, not illustration.
 
-## 消しゴム `eraser.png`
+## 現行の拠点・消しゴム
 
-内蔵 `image_gen` で生成。低彩度の青灰色のスリーブと白いゴム。透過PNGをそのまま保存し、Canvas上で往復させて使用する。
+内蔵 `image_gen` で3点をそれぞれ生成し、透過PNGのアルファを保ったまま保存。生成プロンプト全文は [illustration-prompts.json](illustration-prompts.json)。
+
+- `base-home.png`：瓦屋根の木造門・見張り台を描いた自軍の鉛筆画。
+- `base-enemy.png`：角塔・丸塔・石の城門を描いた敵軍の鉛筆画。自軍とは異なる輪郭。
+- `eraser-soft.png`：淡い灰色のスリーブの消しゴム。写真調を避けた柔らかいイラスト。
+
+拠点はCanvas上に異なる画像として描画。消しゴムは小さく一度だけ表示し、0.55秒で消える。画面全体を往復してこする演出や消しかすは使用しない。動きを減らす設定では移動せずフェードのみ。
+
+## 旧消しゴム `eraser.png`（未使用・制作記録）
+
+内蔵 `image_gen` で生成した旧素材。現在のゲームでは読み込み・配信しない。
 
 生成プロンプト：
 

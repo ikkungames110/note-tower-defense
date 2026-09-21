@@ -24,6 +24,10 @@ try {
     await img.decode();
     if (!img.naturalWidth) throw new Error('背景画像を読み込めません');
   });
+  await page.evaluate(() => Promise.all([
+    window.testBattle.renderer.eraser.decode(),
+    ...window.testBattle.renderer.bases.map(image => image.decode()),
+  ]));
   await page.screenshot({ path: "test-results/desktop.png", fullPage: true });
   await page.locator("#start").click();
   await page.locator('[data-unit="0"]').click();
@@ -163,7 +167,7 @@ try {
   });
   await page.screenshot({ path: 'test-results/boss.png', fullPage: true });
   await page.keyboard.press('q');
-  await page.waitForTimeout(650);
+  await page.waitForTimeout(180);
   await page.screenshot({ path: 'test-results/eraser.png', fullPage: true });
   const eraserFrame = await page.locator('#battle').evaluate(c => c.toDataURL());
   await page.waitForTimeout(200);
@@ -172,10 +176,15 @@ try {
   const still = await page.locator('#battle').evaluate(c => c.toDataURL());
   await page.waitForTimeout(200);
   assert.equal(await page.locator('#battle').evaluate(c => c.toDataURL()), still);
+  await page.evaluate(() => {
+    const { battle: b, renderer: r } = window.testBattle;
+    r.draw(b, 0.6);
+    if (r.effects.some(e => e.type === 'skill')) throw new Error('消しゴム演出が長く残っています');
+  });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.evaluate(() => {
     const { battle: b, renderer: r } = window.testBattle;
-    r.effects = [{ type: 'skill', life: 0.5 }]; r.draw(b, 0);
+    r.effects = [{ type: 'skill', life: 0.18 }]; r.draw(b, 0);
   });
   await page.screenshot({ path: 'test-results/reduced-motion.png', fullPage: true });
   await page.emulateMedia({ reducedMotion: 'no-preference' });

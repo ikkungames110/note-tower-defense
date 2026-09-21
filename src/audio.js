@@ -32,11 +32,11 @@ export class Sound {
       if (type === 'hit' && c.currentTime - this.lastHit < 0.05) return;
       if (type === 'hit') this.lastHit = c.currentTime;
       const n = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
-      const duration = type === 'skill' ? 0.4 : type === 'page' ? 0.2 : 0.09;
+      const duration = type === 'skill' ? 0.16 : type === 'page' ? 0.2 : 0.09;
       n.buffer = this.noise; f.type = 'bandpass';
       f.frequency.value = type === 'skill' ? 650 : type === 'page' ? 450 : 1600;
       f.Q.value = 0.7;
-      g.gain.setValueAtTime(type === 'hit' ? 0.035 : 0.08, c.currentTime);
+      g.gain.setValueAtTime(type === 'hit' ? 0.035 : type === 'skill' ? 0.045 : 0.08, c.currentTime);
       g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + duration);
       n.connect(f).connect(g).connect(c.destination); n.start(); n.stop(c.currentTime + duration);
       n.onended = () => { n.disconnect(); f.disconnect(); g.disconnect(); };

@@ -1,14 +1,19 @@
 import { bossStatus, ENEMIES } from './game.js';
 import { LETTERS } from './letters.js';
 const INK = '#575047';
+const SKILL_DURATION = 0.55;
 export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.effects = [];
     this.eraser = new Image();
-    this.eraser.src = `${import.meta.env.BASE_URL}assets/eraser.png`;
-    this.baseSprite = this.makeLetter(['M14 95 L15 46 L28 46 L29 57 L40 57 L40 41 L61 41 L61 57 L72 57 L72 45 L85 45 L86 95 Z', 'M40 94 L41 73 Q50 61 60 73 L60 94', 'M50 41 L50 13 L73 20 L51 29', 'M24 67 L24 76', 'M76 67 L76 76']);
+    this.eraser.src = `${import.meta.env.BASE_URL}assets/eraser-soft.png`;
+    this.bases = ['home', 'enemy'].map(side => {
+      const sprite = new Image();
+      sprite.src = `${import.meta.env.BASE_URL}assets/base-${side}.png`;
+      return sprite;
+    });
     this.reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
     this.sprites = Object.fromEntries(Object.entries(LETTERS).map(([glyph, paths]) => [glyph, this.makeLetter(paths)]));
     this.strokes = Object.fromEntries(Object.entries(LETTERS).map(([glyph, paths]) =>
@@ -85,8 +90,8 @@ export class Renderer {
     c.setTransform(this.canvas.width / 1200, 0, 0, this.canvas.height / 440, 0, 0);
     c.clearRect(0, 0, 1200, 440);
     this.fold(b.config.fold);
-    this.base(105, b.homeHp / 2000, '自分の拠点');
-    this.base(1095, b.enemyHp / b.config.hp, '相手の拠点');
+    this.base(105, b.homeHp / 2000, '自分の拠点', this.bases[0]);
+    this.base(1095, b.enemyHp / b.config.hp, '相手の拠点', this.bases[1]);
     if (b.status === 'ready') {
       [...b.heroes.map(h => h.glyph), ...'ABCD', ENEMIES[b.config.boss.kind].glyph].forEach((glyph, i) => this.unit({
         glyph, x: i < 5 ? 206 + i * 77 : 699 + (i - 5) * 77,
@@ -95,11 +100,9 @@ export class Renderer {
       }));
     }
     for (const e of this.effects.filter(e => e.type === 'skill')) {
-      const p = e.life / 2.4;
-      const edge = this.reducedMotion.matches ? 1200 : 1080 - p * 860;
+      const p = e.life / SKILL_DURATION;
       c.save();
-      c.globalAlpha = this.reducedMotion.matches ? Math.max(0, 1 - p * 2) : 0.55;
-      c.beginPath(); c.rect(0, 0, Math.max(0, edge), 440); c.clip();
+      c.globalAlpha = Math.max(0, 1 - p * 2) * 0.55;
       for (const u of e.erased || []) {
         if (!b.units.some(live => live.id === u.id)) {
           const size = u.obstacle ? 36 : u.boss ? 125 : 79;
@@ -111,7 +114,7 @@ export class Renderer {
     [...b.units].sort((a, z) => (a.id % 3) - (z.id % 3)).forEach(u => this.unit(u));
     for (const e of this.effects) {
       e.life += dt;
-      const p = e.life / (e.type === 'skill' ? 2.4 : 0.45);
+      const p = e.life / (e.type === 'skill' ? SKILL_DURATION : 0.45);
       if (p > 1) continue;
       c.save();
       c.globalAlpha = (1 - p) * 0.6;
@@ -131,16 +134,15 @@ export class Renderer {
         c.stroke();
       } else if (e.type === 'skill') {
         const reduced = this.reducedMotion.matches;
-        c.globalAlpha = Math.min(1, p * 10, (1 - p) * 10);
-        const scrub = reduced ? 0 : Math.sin(p * Math.PI * 24);
-        c.translate(reduced ? 700 : 1080 - p * 860 + scrub * 30, 270 + scrub * 8);
-        c.rotate(reduced ? -0.12 : -0.15 + scrub * 0.08);
-        c.shadowColor = '#3f342b44'; c.shadowBlur = 8; c.shadowOffsetY = 10;
-        if (this.eraser.complete && this.eraser.naturalWidth) c.drawImage(this.eraser, -105, -70, 210, 140);
+        c.globalAlpha = Math.min(1, p * 8, (1 - p) * 3) * 0.85;
+        // 小さな消しゴムを一度だけ添える。全画面の往復や粉は描かない。
+        c.translate(700 + (reduced ? 0 : (p - 0.5) * 22), 215);
+        c.rotate(-0.12);
+        if (this.eraser.complete && this.eraser.naturalWidth) c.drawImage(this.eraser, -48, -32, 96, 64);
       }
       c.restore();
     }
-    this.effects = this.effects.filter(e => e.life < (e.type === 'skill' ? 2.4 : 0.5));
+    this.effects = this.effects.filter(e => e.life < (e.type === 'skill' ? SKILL_DURATION : 0.5));
   }
   fold(fold) {
     if (!fold) return;
@@ -204,7 +206,7 @@ export class Renderer {
       c.restore();
     });
   }
-  base(x, ratio, label) {
+  base(x, ratio, label, sprite) {
     const c = this.ctx;
     c.save();
     c.translate(x, 300);
@@ -213,12 +215,15 @@ export class Renderer {
     c.fillText(label, 0, 28);
     c.fillStyle = '#5d524b25'; c.fillRect(-30, 36, 60, 2);
     c.fillStyle = '#776956'; c.fillRect(-30, 36, 60 * Math.max(0, ratio), 2);
-    c.save();
-    c.transform(1, 0.13, -0.8, -0.25, 0, 0);
-    c.globalAlpha = 0.3; c.filter = 'blur(1px)';
-    c.drawImage(this.baseSprite, -55, -106, 110, 121);
-    c.restore();
-    c.drawImage(this.baseSprite, -55, -106, 110, 121);
+    if (sprite.complete && sprite.naturalWidth) {
+      const width = 160, height = width * sprite.naturalHeight / sprite.naturalWidth;
+      c.save();
+      c.fillStyle = '#554c4014';
+      c.beginPath(); c.ellipse(0, 0, 55, 5, 0, 0, Math.PI * 2); c.fill();
+      c.globalAlpha = 0.9;
+      c.drawImage(sprite, -width / 2, -height + 12, width, height);
+      c.restore();
+    }
     c.restore();
   }
   unit(u) {
